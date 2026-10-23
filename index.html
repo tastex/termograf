@@ -190,7 +190,19 @@ function parse(j,lat){
   const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
   const t=j.hourly.time.map(P), keep=t.map((_,i)=>j.hourly.temperature_2m[i]!=null), f=a=>a.filter((_,i)=>keep[i]);
   const sun={}; (j.daily?.time||[]).forEach((d,i)=>{const day=Date.parse(d+'T00:00:00Z'),r=j.daily.sunrise[i],st=j.daily.sunset[i];sun[day]=r&&st?[P(r),P(st)]:sunApprox(day,lat,12)});
-  return {t:f(t),temp:f(j.hourly.temperature_2m),rain:f(j.hourly.precipitation).map(v=>v||0),code:f(j.hourly.weather_code),sun};
+  return regular({t:f(t),temp:f(j.hourly.temperature_2m),rain:f(j.hourly.precipitation).map(v=>v||0),code:f(j.hourly.weather_code),sun});
+}
+// the chart and the cursor both assume one reading per hour with no gaps: drop repeated hours (clock change),
+// fill missing ones (clock change, empty readings) from their neighbours
+function regular(o){
+  if(!o.t.length) return o;
+  const a=o.t[0], n=Math.round((o.t[o.t.length-1]-a)/H)+1, r={t:new Array(n),temp:new Array(n).fill(null),rain:new Array(n).fill(0),code:new Array(n).fill(null),sun:o.sun};
+  for(let i=0;i<o.t.length;i++){const k=Math.round((o.t[i]-a)/H); if(k<0||k>=n||r.temp[k]!=null) continue; r.temp[k]=o.temp[i]; r.rain[k]=o.rain[i]; r.code[k]=o.code[i]}
+  let last=null;
+  for(let k=0;k<n;k++){r.t[k]=a+k*H;
+    if(r.temp[k]==null){let j=k+1; while(j<n&&r.temp[j]==null) j++; const next=j<n?r.temp[j]:last, prev=last??next; r.temp[k]=prev+(next-prev)*(1/(j-k+1)); r.code[k]=r.code[k-1]??null}
+    last=r.temp[k]}
+  return r;
 }
 const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten years (Open-Meteo archive goes back to 1940)
 let LOC=null, busy=false, pinWant=null;
@@ -269,6 +281,7 @@ async function extendBack(){
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');
     ['t','temp','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k]));
+    if(D.t[cut]-D.t[cut-1]!==H){const m=regular(D);['t','temp','rain','code'].forEach(k=>D[k]=m[k])} // seam between archive and forecast
     Object.assign(D.sun,o.sun); rebuildDays(); fadeOld(end);
   }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
   busy=false; applyPin(); draw();
@@ -333,7 +346,7 @@ function render(){
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(vc==null||reduce||Math.abs(want-vc)>spanH*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
-  if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!yrv&&!drag) center=vc;} // at rest the view itself sits on the hour
+  if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanH*H/2+pull/pph*H, t1=t0+spanH*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right
@@ -561,7 +574,10 @@ ovbox.addEventListener('pointerdown',e=>{if(!D)return;ovDrag=true;ovbox.setPoint
 ovbox.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
 ovbox.addEventListener('pointerup',()=>ovDrag=false);
 
-function setZoom(h){spanH=h;vc=null;spd=0;document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
+function setZoom(h){
+  if(vc!=null&&spanH<4000) center=vc; // start the new scale from the point under the cursor (the year view keeps the hour it was opened with)
+  spanH=h;vc=null;spd=0;lastC=null;
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>goToday());
 $('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t[idxAt(vc??center)])});
