@@ -127,7 +127,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <input id="city" value="" placeholder="Город" autocomplete="off" enterkeyhint="search" aria-label="Город">
       <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     </form>
-    <div class="src">Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
+    <div class="src"><span id="tz"></span>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
   </div>
 </div>
 
@@ -211,6 +211,9 @@ async function load(where, announce){
   yMin=null; pin=null;
   const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin();
   goToday();
+  // times are the city's local time; say so when it differs from the phone's
+  const devOff=-new Date().getTimezoneOffset()*60000, hrs=D.off/H, sgn=hrs>=0?'+':'−', tzs='UTC'+sgn+Math.abs(hrs).toString().replace('.',',');
+  $('tz').textContent=D.off!==devOff?'Время местное для города, '+tzs+' · ':'';
   $('chartbox').classList.remove('loading');
   if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
 }
