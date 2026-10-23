@@ -84,7 +84,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .src{font:400 11px var(--f-data);color:var(--muted)}
 .src a{color:inherit}
 </style>
-<style>body{margin:0}:root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}</style>
+<style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
+:root.ios-app{padding-top:max(env(safe-area-inset-top,0px),54px);padding-bottom:max(env(safe-area-inset-bottom,0px),20px)}</style>
+<script>if(navigator.standalone)document.documentElement.classList.add("ios-app")</script>
 </head>
 <body>
 
