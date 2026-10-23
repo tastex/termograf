@@ -58,12 +58,14 @@ canvas{display:block;width:100%;height:100%}
 .ovbox{height:54px;position:relative;touch-action:none;cursor:pointer}
 .bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .seg{display:inline-flex;background:var(--paper-2);border-radius:999px;padding:3px}
-.seg button,.btn{font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:7px 11px;cursor:pointer}
+.seg button,.btn{font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:7px 10px;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--paper);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .btn{color:var(--ink);border:1px solid var(--ink)}
 .acts{display:flex;gap:8px;align-items:center}
 .ibtn{width:36px;height:36px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--pin);background:transparent;color:var(--pin);cursor:pointer;padding:0}
 .ibtn[aria-pressed="true"]{background:var(--pin);color:var(--paper)}
+.ibtn.now{border-color:var(--ink);color:var(--ink)}
+.ibtn:disabled{opacity:.35;cursor:default}
 .btn:disabled{opacity:.35;cursor:default}
 button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .note{font:400 12px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
@@ -111,10 +113,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <button id="z3" data-h="72">3 дня</button>
       <button id="z7" data-h="168">Неделя</button>
       <button id="z30" data-h="720">Месяц</button>
+      <button id="z365" data-h="8760">Год</button>
     </div>
     <div class="acts">
       <button class="ibtn" id="pinBtn" type="button" aria-pressed="false" aria-label="Поставить метку на точку под курсором"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 4H7l3-4z"/></svg></button>
-      <button class="btn" id="today">К сегодня</button>
+      <button class="ibtn now" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
     </div>
   </div>
   <div class="foot">
@@ -247,9 +250,9 @@ async function extendBack(){
 }
 
 /* ---------- view ---------- */
-const maxC=()=>D.fut-H, // the last revealed hour may reach the cursor line
+const maxC=()=>spanH>=4000?D.fut-spanH*H/2:D.fut-H, // the last revealed hour may reach the cursor line
    minC=()=>D.t[0]+spanH*H/2;
-function clamp(){center=Math.max(minC(),Math.min(maxC(),center))}
+function clamp(){center=Math.min(maxC(),Math.max(minC(),center))}
 function goToday(){ // cursor on the current hour
   center=D.t[0]+Math.floor((D.now-D.t[0])/H)*H; pull=0; clamp(); draw();
 }
@@ -308,11 +311,11 @@ function render(){
   const stepY=(yMax-yMin)>40?10:5, yFirst=Math.ceil(yMin/stepY)*stepY;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;g.strokeStyle=v===0?C['grid-strong']:C.grid;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
   // hour ticks + midnight lines
-  const hStep=pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
+  const yr=dayW<4, hStep=pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
   for(let ms=firstH;ms<=t1;ms+=hStep*H){
     const x=Math.round(X(ms))+.5, mid=new Date(ms).getUTCHours()===0;
-    if(mid&&dayW<20&&new Date(ms).getUTCDay()!==1) continue;
+    if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut) continue;
     if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
     else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 10px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
@@ -321,13 +324,13 @@ function render(){
   for(let d=d0;d<=t1;d+=DAY){
     const a=X(d), b=X(d+DAY); if(b<0||a>W||d>=D.fut) continue;
     const dt=new Date(d); let rel=REL[relDay(d)];
-    const wk=dayW<26; if(wk&&dt.getUTCDay()!==1) continue; if(wk) rel=null;
-    const l2=dayW>=64?WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:wk?dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:String(dt.getUTCDate());
-    const room=wk?dayW*7:dayW;
+    const wk=dayW<26; if(yr?dt.getUTCDate()!==1:wk&&dt.getUTCDay()!==1) continue; if(wk) rel=null;
+    const l2=yr?(dt.getUTCMonth()===0?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]):dayW>=64?WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:wk?dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:String(dt.getUTCDate());
+    const room=yr?dayW*28:wk?dayW*7:dayW;
     g.font='600 11px '+MONO; let w1=rel?g.measureText(rel).width:0;
     if(rel&&dayW<w1+6){rel={'позавчера':'позавч.','послезавтра':'послез.','сегодня':'сегод.'}[rel]||rel;w1=g.measureText(rel).width}
     g.font='400 11px '+MONO; const w2=g.measureText(l2).width;
-    const showRel=rel&&room>=w1+6, w=Math.max(showRel?w1:0,w2); if(!w||room<w+6) continue;
+    const showRel=rel&&room>=w1+6, w=Math.max(showRel?w1:0,w2); if(!w||(!yr&&room<w+6)) continue;
     const x=Math.min(Math.max(a,0)+5,a+room-w-5);
     if(showRel){g.font='600 11px '+MONO;g.fillStyle=C.ink;g.fillText(rel,x,14)}
     if(l2){g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(l2,x,28)}
@@ -335,15 +338,22 @@ function render(){
   // rain bars
   const iEnd=idxAt(D.fut-H), i0=Math.max(0,idxAt(t0)-2), i1=Math.min(iEnd,idxAt(t1)+2);
   g.fillStyle=C.rain; g.globalAlpha=.55;
-  for(let i=i0;i<=i1;i++){const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}
+  const days=[]; if(yr){for(let i=i0;i<=i1;i++){const k=dayOf(D.t[i]),d=days[days.length-1];if(!d||d.k!==k)days.push({k,hi:D.temp[i],lo:D.temp[i],sum:D.temp[i],n:1,r:D.rain[i]});else{d.hi=Math.max(d.hi,D.temp[i]);d.lo=Math.min(d.lo,D.temp[i]);d.sum+=D.temp[i];d.n++;d.r+=D.rain[i]}}
+    days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH);g.fillRect(X(d.k),Ht-4-h,Math.max(1,dayW-.3),h)}})}
+  else for(let i=i0;i<=i1;i++){const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}
   g.globalAlpha=1;
   // pinned reference line
   if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
   // temperature trace
-  const segs=[[],[]];for(let i=i0;i<=i1;i++)segs[warp&&D.t[i]>=warp.from?1:0].push([X(D.t[i]),Y(D.temp[i])]);
+  const segs=[[],[]];
+  if(yr){ // a year: daily range as a band, daily mean as the line
+    const band=days.map(d=>[X(d.k+12*H),Y(d.hi)]).concat(days.slice().reverse().map(d=>[X(d.k+12*H),Y(d.lo)]));
+    if(band.length>2){g.beginPath();g.moveTo(band[0][0],band[0][1]);band.forEach(p=>g.lineTo(p[0],p[1]));g.closePath();g.fillStyle=C['ink-soft'];g.fill();g.globalAlpha=.6;g.fill();g.globalAlpha=1}
+    days.forEach(d=>segs[0].push([X(d.k+12*H),Y(d.sum/d.n)]));
+  } else for(let i=i0;i<=i1;i++)segs[warp&&D.t[i]>=warp.from?1:0].push([X(D.t[i]),Y(D.temp[i])]);
   const path=pts=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
   segs.forEach(pts=>{ if(pts.length<2) return;
-    path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill();
+    if(!yr){path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill()}
     g.save();g.beginPath();g.rect(0,0,Math.max(0,xn),Ht);g.clip();path(pts);g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore();
     if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
   });
