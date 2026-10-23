@@ -71,7 +71,13 @@ canvas{display:block;width:100%;height:100%}
 button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .note{font:400 12px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 .foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px}
-.city{display:flex;align-items:center;gap:6px;min-width:0}
+.city{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
+.sugg{position:absolute;left:0;bottom:calc(100% + 6px);z-index:15;width:min(320px,calc(100vw - 32px));margin:0;padding:4px;list-style:none;
+  background:var(--paper);border:1px solid var(--grid);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.sugg li{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.sugg li[aria-selected="true"],.sugg li:hover{background:var(--paper-2)}
+.sugg b{font:500 15px var(--f-body);color:var(--fg)}
+.sugg span{font:400 12px var(--f-body);color:var(--muted)}
 .city input{font:500 16px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:14ch;min-width:0}
 .city input:focus{outline:none;border-bottom-color:var(--ink)}
 .locbtn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:999px;background:var(--paper-2);color:var(--ink);cursor:pointer;padding:0;flex:none}
@@ -124,7 +130,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   <div class="foot">
     <form class="city" id="cityForm">
       <span class="lbl">Город</span>
-      <input id="city" value="" placeholder="Город" autocomplete="off" enterkeyhint="search" aria-label="Город">
+      <input id="city" value="" placeholder="Город" autocomplete="off" enterkeyhint="search" aria-label="Город" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false">
+      <ul class="sugg" id="sugg" role="listbox" hidden></ul>
       <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     </form>
     <div class="src"><span id="tz"></span>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
@@ -217,10 +224,11 @@ async function load(where, announce){
   $('chartbox').classList.remove('loading');
   if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
 }
-async function geocode(name){
-  const g=await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name='+encodeURIComponent(name))).json();
-  const p=g.results&&g.results[0]; return p?{name:p.name,lat:p.latitude,lon:p.longitude}:null;
+async function geocodeAll(name,count){
+  const g=await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=${count}&language=ru&name=`+encodeURIComponent(name))).json();
+  return (g.results||[]).map(p=>({name:p.name,lat:p.latitude,lon:p.longitude,region:[p.admin1,p.country].filter((x,i,a)=>x&&a.indexOf(x)===i&&x!==p.name).join(', ')}));
 }
+async function geocode(name){const r=await geocodeAll(name,1);return r[0]?{name:r[0].name,lat:r[0].lat,lon:r[0].lon}:null}
 async function placeName(lat,lon){
   try{const r=await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ru`)).json();
     return r.city||r.locality||r.principalSubdivision||'Моё место'}catch(e){return 'Моё место'}
@@ -325,7 +333,7 @@ function render(){
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(vc==null||reduce||Math.abs(want-vc)>spanH*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
-  if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else vc=want;
+  if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!yrv&&!drag) center=vc;} // at rest the view itself sits on the hour
   const t0=vc-spanH*H/2+pull/pph*H, t1=t0+spanH*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right
@@ -553,11 +561,34 @@ ovbox.addEventListener('pointerdown',e=>{if(!D)return;ovDrag=true;ovbox.setPoint
 ovbox.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
 ovbox.addEventListener('pointerup',()=>ovDrag=false);
 
-function setZoom(h){spanH=h;document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
+function setZoom(h){spanH=h;vc=null;spd=0;document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>goToday());
-$('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t[idxAt(center)])});
-$('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('city').value.trim();$('city').blur();if(!q)return;
+$('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t[idxAt(vc??center)])});
+// suggestions while typing: up to six places with region and country
+let sugg=[], suggSel=-1, suggT=0, suggQ='';
+function showSugg(list){const ul=$('sugg'); sugg=list; suggSel=-1; ul.textContent='';
+  list.forEach((w,i)=>{const li=document.createElement('li'); li.setAttribute('role','option'); li.id='sg'+i;
+    const b=document.createElement('b'); b.textContent=w.name; li.append(b);
+    if(w.region){const sp=document.createElement('span'); sp.textContent=w.region; li.append(sp)}
+    li.addEventListener('pointerdown',ev=>{ev.preventDefault(); pickSugg(i)}); ul.append(li)});
+  ul.hidden=!list.length; $('city').setAttribute('aria-expanded',String(!!list.length));}
+function hideSugg(){showSugg([])}
+function markSugg(){[...$('sugg').children].forEach((li,i)=>li.setAttribute('aria-selected',String(i===suggSel)));
+  $('city').setAttribute('aria-activedescendant',suggSel>=0?'sg'+suggSel:'')}
+function pickSugg(i){const w=sugg[i]; if(!w) return; hideSugg(); $('city').value=w.name; $('city').blur();
+  setPin(null); load({name:w.name,lat:+w.lat.toFixed(3),lon:+w.lon.toFixed(3)},true)}
+$('city').addEventListener('input',()=>{const q=$('city').value.trim(); clearTimeout(suggT);
+  if(q.length<2){hideSugg();return}
+  suggT=setTimeout(async()=>{suggQ=q; let r=[]; try{r=await geocodeAll(q,6)}catch(e){} if(suggQ===q&&document.activeElement===$('city')) showSugg(r)},250)});
+$('city').addEventListener('keydown',e=>{if($('sugg').hidden) return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault(); suggSel=(suggSel+(e.key==='ArrowDown'?1:-1)+sugg.length)%sugg.length; markSugg()}
+  else if(e.key==='Enter'&&suggSel>=0){e.preventDefault(); pickSugg(suggSel)}
+  else if(e.key==='Escape'){hideSugg()}});
+$('city').addEventListener('blur',()=>setTimeout(hideSugg,150));
+$('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('city').value.trim();
+  if(sugg[0]&&suggQ===q){pickSugg(0);return} // Enter takes the first suggestion
+  $('city').blur();hideSugg();if(!q)return;
   $('chartbox').classList.add('loading');
   let w=null; try{w=await geocode(q)}catch(err){}
   if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Внутри Claude поиск городов не работает':'Город «'+q+'» не найден. Проверьте название');return}
