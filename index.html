@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-visual">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Термограф">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f5f7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12161d">
 <title>Термограф</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Unbounded:wght@500;700&display=swap">
@@ -176,12 +185,13 @@ async function load(where, announce){
     const j=await (await fetch(u)).json(); if(!j.hourly) throw new Error('api');
     D=parse(j,where.lat); D.now=Date.now()+j.utc_offset_seconds*1000;
     LOC={lat:where.lat,lon:where.lon}; $('city').value=where.name;
-    $('note').hidden=true; store.set('place',JSON.stringify(where));
+    $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
   }catch(e){
     ok=false;
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Не удалось загрузить погоду, попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.sample=true; LOC=null;
+    if(window.top===window) $('note').textContent='Нет связи с сервисом погоды, поэтому показан пример данных. Проверьте интернет и откройте страницу ещё раз.';
     $('note').hidden=false;
   }
   D.limit=dayOf(D.now)-HIST_DAYS*DAY;
@@ -477,9 +487,33 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
 new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 setZoom(+(store.get('span')||72));
-(async()=>{ // start: saved place → silent GPS if already allowed → city by network → Moscow
+/* ---------- link with the city, home-screen app ---------- */
+function setUrl(w){ // keep the place in the address so a bookmark or home-screen icon opens this city
+  try{const u=new URL(location.href); u.search=''; u.searchParams.set('city',w.name); u.searchParams.set('lat',w.lat); u.searchParams.set('lon',w.lon);
+    history.replaceState(null,'',u); updateManifest(w)}catch(e){}
+}
+function updateManifest(w){
+  const link=document.querySelector('link[rel="manifest"]'); if(!link) return;
+  const base=new URL('./',location.href).href, abs=f=>new URL(f,base).href;
+  const m={id:location.href,name:'Термограф — '+w.name,short_name:w.name.length<=12?w.name:'Термограф',lang:'ru',
+    start_url:location.href,scope:base,display:'standalone',background_color:'#f3f5f7',theme_color:'#5b3fc4',
+    icons:[{src:abs('icon-192.png'),sizes:'192x192',type:'image/png'},{src:abs('icon-512.png'),sizes:'512x512',type:'image/png'},
+      {src:abs('icon-maskable-512.png'),sizes:'512x512',type:'image/png',purpose:'maskable'}]};
+  link.href='data:application/manifest+json,'+encodeURIComponent(JSON.stringify(m));
+  const t=document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.content=m.short_name;
+}
+async function placeFromUrl(){
+  const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon')), c=q.get('city');
+  if(isFinite(lat)&&isFinite(lon)) return {name:c||'Место',lat,lon};
+  if(c){try{return await geocode(c)}catch(e){}}
+  return null;
+}
+if('serviceWorker' in navigator&&window.top===window&&location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+(async()=>{ // start: place in the link → saved place → silent GPS if already allowed → city by network → Moscow
   const MSK={name:'Москва',lat:55.756,lon:37.617};
-  let w=null; try{w=JSON.parse(store.get('place')||'null')}catch(e){}
+  let w=await placeFromUrl();
+  if(!w){try{w=JSON.parse(store.get('place')||'null')}catch(e){}}
   if(!w){try{const st=await navigator.permissions?.query({name:'geolocation'}); if(st&&st.state==='granted') w=await hereByGps()}catch(e){}}
   if(!w){try{w=await hereByIp()}catch(e){}}
   load(w||MSK,false);
