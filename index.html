@@ -190,7 +190,7 @@ async function load(where, announce){
   const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin();
   goToday();
   $('chartbox').classList.remove('loading');
-  if(announce&&ok) toast('Теперь показана погода: '+where.name);
+  if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
 }
 async function geocode(name){
   const g=await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name='+encodeURIComponent(name))).json();
@@ -210,7 +210,7 @@ async function hereByIp(){ // no permission prompt: approximate city from the ne
   return {name:await placeName(lat,lon),lat,lon};
 }
 let toastT=0;
-function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2600)}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?5200:2600)}
 function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 async function extendBack(){
@@ -236,8 +236,8 @@ async function extendBack(){
 const maxC=()=>D.fut-H, // the last revealed hour may reach the cursor line
    minC=()=>D.t[0]+spanH*H/2;
 function clamp(){center=Math.max(minC(),Math.min(maxC(),center))}
-function goToday(){ // today, tomorrow and the day after
-  center=dayOf(D.now)+3*DAY-spanH*H/2; pull=0; clamp(); draw();
+function goToday(){ // cursor on the current hour
+  center=D.t[0]+Math.floor((D.now-D.t[0])/H)*H; pull=0; clamp(); draw();
 }
 function idxAt(ms){return Math.max(0,Math.min(D.t.length-1,Math.round((ms-D.t[0])/H)))}
 function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
@@ -462,7 +462,15 @@ $('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('
 $('city').addEventListener('blur',()=>{setTimeout(()=>window.scrollTo(0,0),50)});
 $('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.add('busy');
   try{const w=await hereByGps();setPin(null);await load(w,true)}
-  catch(err){toast(err&&err.code===1?'Доступ к геопозиции запрещён в настройках браузера':'Не удалось определить местоположение')}
+  catch(err){
+    // GPS refused or failed: fall back to the city by network and say why
+    const framed=window.top!==window, ios=/iP(hone|ad|od)/.test(navigator.userAgent);
+    const why=framed?'Здесь геопозиция недоступна — откройте tastex.github.io/termograf'
+      :err&&err.code===1?(ios?'Геопозиция выключена для сайтов: Настройки → Конфиденциальность → Службы геолокации → Сайты Safari':'Браузер не дал доступ к геопозиции')
+      :err&&err.code===3?'Геопозиция не ответила вовремя':'Не удалось определить точное место';
+    let w=null; try{w=await hereByIp()}catch(e){}
+    if(w){setPin(null);await load(w,why+'. Показан город по сети: '+w.name)} else toast(why);
+  }
   b.classList.remove('busy')});
 addEventListener('resize',draw);
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
