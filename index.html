@@ -106,8 +106,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     <div class="delta" id="delta">&nbsp;</div>
     <div class="verdict" id="verdict">&nbsp;</div>
   </header>
-  <div class="note" id="note" hidden>Это пример данных: в просмотре Claude страница не может обратиться к сервису погоды. Откройте файл в обычном браузере — подтянутся реальные данные: прогноз на две недели и архив за год.</div>
-  <div class="chartbox" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
+  <div class="note" id="note" hidden>Здесь показан пример: внутри Claude страница не может запросить погоду. Настоящие данные — на tastex.github.io/termograf.</div>
+  <div class="chartbox loading" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор всего загруженного периода"></canvas></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Масштаб">
@@ -189,7 +189,7 @@ const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten 
 let LOC=null, busy=false, pinWant=null;
 // where: {name, lat, lon}
 async function load(where, announce){
-  const first=!D; if(first) $('when').textContent='Загрузка…'; else $('chartbox').classList.add('loading');
+  const first=!D; if(first) $('when').textContent='Загрузка…'; $('chartbox').classList.add('loading');
   let ok=true; $('city').value=where.name;
   try{
     const u=`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}&longitude=${where.lon}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`;
@@ -199,10 +199,10 @@ async function load(where, announce){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
   }catch(e){
     ok=false;
-    if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Не удалось загрузить погоду, попробуйте ещё раз');return}
+    if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.sample=true; LOC=null;
-    if(window.top===window) $('note').textContent='Нет связи с сервисом погоды, поэтому показан пример данных. Проверьте интернет и откройте страницу ещё раз.';
+    if(window.top===window) $('note').textContent='Сервис погоды не отвечает, поэтому показан пример. Проверьте интернет и обновите страницу.';
     $('note').hidden=false;
   }
   rebuildDays();
@@ -258,7 +258,7 @@ async function extendBack(){
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');
     ['t','temp','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k]));
-    Object.assign(D.sun,o.sun); rebuildDays();
+    Object.assign(D.sun,o.sun); rebuildDays(); fadeOld(end);
   }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
   busy=false; applyPin(); draw();
 }
@@ -294,7 +294,13 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-let drawQ=0;
+let drawQ=0, fade=null;
+function fadeOld(from){ // older data that just arrived fades in instead of popping up
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  fade={from,e:0}; const t0=performance.now();
+  const step=now=>{const k=Math.min(1,(now-t0)/500); fade.e=1-Math.pow(1-k,3); render(); if(k<1) requestAnimationFrame(step); else fade=null};
+  requestAnimationFrame(step);
+}
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
   if(center-Math.max(spanH*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
 function render(){
@@ -401,13 +407,14 @@ function render(){
   if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
     if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
       g.beginPath();g.moveTo(px,py-12);g.lineTo(px+5,py-5);g.lineTo(px,py+2);g.lineTo(px-5,py-5);g.closePath();g.fillStyle=C.pin;g.fill()}}
+  if(fade){const xr=Math.min(W,X(fade.from)); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
   // left end: more history is loading, or the ten years are all there is
   const xs=X(D.t[0]);
   if(pull<-2&&xs>0){const more=D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
     const cx2=xs/2, cy2=(top+bot)/2; g.fillStyle=more?C.ink:C.muted; g.strokeStyle=g.fillStyle; g.lineWidth=2; g.lineCap='round';
     g.beginPath();g.moveTo(cx2+6,cy2-30);g.lineTo(cx2-6,cy2-22);g.lineTo(cx2+6,cy2-14);g.stroke();
-    g.font='600 12px '+MONO; const l=more?['Загружаю','ещё год']:['Дальше','данных нет']; g.fillText(l[0],cx2,cy2+2);
-    g.font='400 11px '+MONO; g.fillText(more?l[1]:'архив — 10 лет',cx2,cy2+18); g.restore()}
+    g.font='600 12px '+MONO; const l=more?['Загружаю','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
+    g.font='400 11px '+MONO; g.fillText(l[1],cx2,cy2+18); g.restore()}
   // pull-for-more hint past the revealed end
   if(pull>2&&xf<W){const more=D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15;
     g.save();g.globalAlpha=Math.min(1,pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
@@ -415,35 +422,40 @@ function render(){
     g.strokeStyle=more?C.ink:C.muted;g.lineWidth=2;g.lineCap='round';g.beginPath();
     g.moveTo(cx2-6,cy2-30);g.lineTo(cx2+6,cy2-22);g.lineTo(cx2-6,cy2-14);g.stroke();
     g.fillStyle=more?C.ink:C.muted;g.font='600 12px '+MONO;
-    const l=more?(ready?['Отпустите',' ']:['Тяните —','неделя вперёд']):['Дальше','прогноза нет'];
+    const l=more?(ready?['Отпустите','покажу неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   // center cursor
-  const ci=idxAt(center), cx=X(D.t[ci]), cy=Y(D.temp[ci]);
+  const ci=idxAt(center), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
+  const cx=cd?X(cd.k+12*H):X(D.t[ci]), cy=cd?Y(cd.sum/cd.n):Y(D.temp[ci]);
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(Math.round(cx)+.5,top-8);g.lineTo(Math.round(cx)+.5,bot);g.stroke();
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
-  readout(ci); drawOv(C);
+  readout(ci,yr); drawOv(C);
   $('today').disabled=Math.abs(center-D.now)<spanH*H*0.6;
 }
 
-function readout(i){
-  const ms=D.t[i], day=dayOf(ms), dd=relDay(ms);
-  const ad=-dd, rel=REL[dd]||(dd>0?'прогноз':ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yearsAgo(ad));
-  $('temp').textContent=fmtT(D.temp[i]);
-  const yy=new Date(ms).getUTCFullYear(); $('when').textContent=dLabel(ms)+(yy!==new Date(D.now).getUTCFullYear()?' '+yy:'')+' · '+hh(ms);
-  const tg=rel+(WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
-  let lo=1e9,hi=-1e9,rs=0;for(let k=Math.max(0,idxAt(day));k<D.t.length&&D.t[k]<day+DAY;k++){if(D.t[k]<day)continue;lo=Math.min(lo,D.temp[k]);hi=Math.max(hi,D.temp[k]);rs+=D.rain[k]}
-  $('cond').textContent=`${fmtT(lo)}…${fmtT(hi)} · ${rs>0?rs.toFixed(1).replace('.',',')+' мм':'сухо'}`;
-  // delta against the pin, or against now
+const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
+const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.now).getUTCFullYear()?' '+y:''};
+function readout(i,yr){ // in the year view the cursor stands on whole days and shows the daily mean
+  const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
+  const ad=-dd, rel=REL[dd]||(dd>0?`через ${dd} дн.`:ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yearsAgo(ad));
+  const val=yr?rec.sum/rec.n:D.temp[i];
+  $('temp').textContent=fmtT(val);
+  $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+hh(ms));
+  const tg=rel+(yr?' · средняя за день':WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
+  $('cond').textContent=`${fmtT(rec.lo)}…${fmtT(rec.hi)} · ${rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо'}`;
+  // difference with the pin, or with the current hour (the current day's mean in the year view)
   const ref=pin!=null?idxAt(pin):idxAt(D.now), el=$('delta'); el.textContent='';
-  const dv=D.temp[i]-D.temp[ref], b=document.createElement('b'); b.textContent='Δ '+fmtD(dv); el.append(b);
+  const rr=dayRec(D.t[ref]), refVal=yr?rr.sum/rr.n:D.temp[ref];
+  const dv=val-refVal, b=document.createElement('b'); b.textContent='Δ '+fmtD(dv); el.append(b);
   const ad2=Math.abs(dv), w=dv>0?'теплее':'холоднее';
-  const vt=ad2<1?'Так же':ad2<3?'Чуть '+w:ad2<6?w[0].toUpperCase()+w.slice(1):ad2<10?'Заметно '+w:ad2<15?'Сильно '+w:'Совсем другая погода, намного '+w;
+  const vt=ad2<1?'Так же':ad2<3?'Чуть '+w:ad2<6?w[0].toUpperCase()+w.slice(1):ad2<10?'Заметно '+w:ad2<15?'Сильно '+w:'Намного '+w;
   const vd=$('verdict'); vd.textContent=vt; vd.className='verdict'+(ad2<1?'':dv>0?' warm':' cool');
   if(pin!=null){
-    const pd=REL[relDay(D.t[ref])], lab=pd?pd+' '+hh(D.t[ref]):new Date(D.t[ref]).getUTCDate()+' '+MON[new Date(D.t[ref]).getUTCMonth()]+' '+hh(D.t[ref]);
-    el.append(' к '+lab+' ');
+    const rt=D.t[ref], pd=REL[relDay(rt)], dt=new Date(rt);
+    const lab=(pd||dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+withYear(rt))+(yr?'':', '+hh(rt));
+    el.append((yr?' к средней за ':' к ')+lab+' ');
     const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
-  } else el.append(' к сейчас');
+  } else el.append(yr?' к средней за сегодня':' к текущей');
   const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
 }
 function setPin(ms){pin=ms;pinWant=null;store.set('pin',ms==null?null:String(ms));draw()}
@@ -469,7 +481,7 @@ function drawOv(C){
       if(jan||!long){o.fillRect(x,0,1,Ht);const tx=jan?String(d.getUTCFullYear()):MON[d.getUTCMonth()];if(x+3>=lastEnd){o.fillText(tx,x+3,Ht-1);lastEnd=x+3+o.measureText(tx).width+3}}
       else o.fillRect(x,Ht-12,1,3); // small month ticks when years are shown
     }
-    if(busy){o.fillStyle=C.ink;o.fillText('загружаю…',3,10)}
+    if(busy){o.fillStyle=C.ink;o.fillText('загрузка…',3,10)}
   }
   g.clearRect(0,0,W,Ht); g.drawImage(ovBg,0,0,W,Ht);
   const x0=Math.max(0,X(center-spanH*H/2)),x1=Math.min(W,X(center+spanH*H/2));
@@ -528,7 +540,7 @@ $('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t
 $('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('city').value.trim();$('city').blur();if(!q)return;
   $('chartbox').classList.add('loading');
   let w=null; try{w=await geocode(q)}catch(err){}
-  if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Поиск города недоступен в этом просмотре':'Город «'+q+'» не найден');return}
+  if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Внутри Claude поиск городов не работает':'Город «'+q+'» не найден. Проверьте название');return}
   setPin(null); load(w,true)});
 $('city').addEventListener('blur',()=>{setTimeout(()=>window.scrollTo(0,0),50)});
 $('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.add('busy');
@@ -536,11 +548,11 @@ $('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.a
   catch(err){
     // GPS refused or failed: fall back to the city by network and say why
     const framed=window.top!==window, ios=/iP(hone|ad|od)/.test(navigator.userAgent);
-    const why=framed?'Здесь геопозиция недоступна — откройте tastex.github.io/termograf'
+    const why=framed?'Внутри Claude геопозиция не работает. Откройте tastex.github.io/termograf'
       :err&&err.code===1?(ios?'Геопозиция выключена для сайтов: Настройки → Конфиденциальность → Службы геолокации → Сайты Safari':'Браузер не дал доступ к геопозиции')
-      :err&&err.code===3?'Геопозиция не ответила вовремя':'Не удалось определить точное место';
+      :err&&err.code===3?'Место не определилось вовремя':'Точное место определить не удалось';
     let w=null; try{w=await hereByIp()}catch(e){}
-    if(w){setPin(null);await load(w,why+'. Показан город по сети: '+w.name)} else toast(why);
+    if(w){setPin(null);await load(w,why+'. Показан город, определённый по сети: '+w.name)} else toast(why);
   }
   b.classList.remove('busy')});
 addEventListener('resize',draw);
