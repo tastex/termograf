@@ -194,14 +194,14 @@ async function load(where, announce){
   try{
     const u=`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}&longitude=${where.lon}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`;
     const j=await (await fetch(u)).json(); if(!j.hourly) throw new Error('api');
-    D=parse(j,where.lat); D.now=Date.now()+j.utc_offset_seconds*1000;
+    D=parse(j,where.lat); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where;
     LOC={lat:where.lat,lon:where.lon}; $('city').value=where.name;
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
   }catch(e){
     ok=false;
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
-    D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.sample=true; LOC=null;
+    D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
     if(window.top===window) $('note').textContent='Сервис погоды не отвечает, поэтому показан пример. Проверьте интернет и обновите страницу.';
     $('note').hidden=false;
   }
@@ -267,6 +267,7 @@ async function extendBack(){
 const maxC=()=>D.fut-H, minC=()=>D.t[0]; // the first and last loaded hours may both reach the cursor line
 function clamp(){center=Math.min(maxC(),Math.max(minC(),center))}
 function goToday(){ // cursor on the current hour
+  D.now=Date.now()+D.off; // the page may have been asleep for hours (home-screen app): use the clock, not the load time
   center=D.t[0]+Math.floor((D.now-D.t[0])/H)*H; pull=0; clamp(); draw();
 }
 function idxAt(ms){return Math.max(0,Math.min(D.t.length-1,Math.round((ms-D.t[0])/H)))}
@@ -430,7 +431,7 @@ function render(){
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(Math.round(cx)+.5,top-8);g.lineTo(Math.round(cx)+.5,bot);g.stroke();
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
   readout(ci,yr); drawOv(C);
-  $('today').disabled=Math.abs(center-D.now)<spanH*H*0.6;
+  $('today').disabled=Math.abs(center-(D.t[0]+Math.floor((D.now-D.t[0])/H)*H))<H/2; // only when the cursor already stands on the current hour
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
@@ -560,6 +561,14 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
 new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 setZoom(+(store.get('span')||72));
+// keep "now" current while the page is open, and refresh the data after a long sleep
+setInterval(()=>{if(D){D.now=Date.now()+D.off;draw()}},60000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible'||!D) return;
+  D.now=Date.now()+D.off;
+  if(!D.sample&&D.where&&Date.now()-D.at>30*60000) load(D.where,false); else draw();
+});
+
 /* ---------- link with the city, home-screen app ---------- */
 function setUrl(w){ // keep the place in the address so a bookmark or home-screen icon opens this city
   try{const u=new URL(location.href); u.search=''; u.searchParams.set('city',w.name); u.searchParams.set('lat',w.lat); u.searchParams.set('lon',w.lon);
