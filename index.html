@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-visual">
 <title>Термограф</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Unbounded:wght@500;700&display=swap">
@@ -59,8 +59,17 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .note{font:400 12px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 .foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px}
 .city{display:flex;align-items:center;gap:6px;min-width:0}
-.city input{font:500 15px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:14ch;min-width:0}
+.city input{font:500 16px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:14ch;min-width:0}
 .city input:focus{outline:none;border-bottom-color:var(--ink)}
+.locbtn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:999px;background:var(--paper-2);color:var(--ink);cursor:pointer;padding:0;flex:none}
+.locbtn.busy svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.chartbox canvas,.ovbox canvas{transition:opacity .35s ease}
+.chartbox.loading canvas{opacity:.25}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);transform:translate(-50%,12px);opacity:0;pointer-events:none;z-index:20;
+  max-width:calc(100% - 32px);background:var(--fg);color:var(--paper);font:500 14px/1.3 var(--f-body);padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);transition:opacity .25s ease,transform .25s ease}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){.toast,.chartbox canvas{transition:none}.locbtn.busy svg{animation:none}}
 .city .lbl{font:500 11px var(--f-data);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .src{font:400 11px var(--f-data);color:var(--muted)}
 .src a{color:inherit}
@@ -69,6 +78,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 </head>
 <body>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="app">
   <header>
     <div class="temp" id="temp">—</div>
@@ -97,7 +107,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   <div class="foot">
     <form class="city" id="cityForm">
       <span class="lbl">Город</span>
-      <input id="city" value="Москва" autocomplete="off" aria-label="Город">
+      <input id="city" value="" placeholder="Город" autocomplete="off" enterkeyhint="search" aria-label="Город">
+      <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     </form>
     <div class="src">Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
   </div>
@@ -156,19 +167,19 @@ function parse(j,lat){
 }
 const HIST_DAYS=400; // how far back the page may scroll: a little over a year
 let LOC=null, busy=false, pinWant=null;
-async function load(name){
-  $('when').textContent='Загрузка…';
+// where: {name, lat, lon}
+async function load(where, announce){
+  const first=!D; if(first) $('when').textContent='Загрузка…'; else $('chartbox').classList.add('loading');
+  let ok=true; $('city').value=where.name;
   try{
-    const g=await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name='+encodeURIComponent(name))).json();
-    const p=g.results&&g.results[0]; if(!p) throw new Error('nocity');
-    $('city').value=p.name;
-    const u=`https://api.open-meteo.com/v1/forecast?latitude=${p.latitude}&longitude=${p.longitude}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`;
-    const j=await (await fetch(u)).json();
-    D=parse(j,p.latitude); D.now=Date.now()+j.utc_offset_seconds*1000;
-    LOC={lat:p.latitude,lon:p.longitude};
-    $('note').hidden=true; store.set('city',p.name);
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}&longitude=${where.lon}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`;
+    const j=await (await fetch(u)).json(); if(!j.hourly) throw new Error('api');
+    D=parse(j,where.lat); D.now=Date.now()+j.utc_offset_seconds*1000;
+    LOC={lat:where.lat,lon:where.lon}; $('city').value=where.name;
+    $('note').hidden=true; store.set('place',JSON.stringify(where));
   }catch(e){
-    if(e.message==='nocity'&&D&&!D.sample){$('when').textContent='Город не найден';return}
+    ok=false;
+    if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Не удалось загрузить погоду, попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.sample=true; LOC=null;
     $('note').hidden=false;
@@ -178,7 +189,28 @@ async function load(name){
   yMin=null; pin=null;
   const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin();
   goToday();
+  $('chartbox').classList.remove('loading');
+  if(announce&&ok) toast('Теперь показана погода: '+where.name);
 }
+async function geocode(name){
+  const g=await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name='+encodeURIComponent(name))).json();
+  const p=g.results&&g.results[0]; return p?{name:p.name,lat:p.latitude,lon:p.longitude}:null;
+}
+async function placeName(lat,lon){
+  try{const r=await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ru`)).json();
+    return r.city||r.locality||r.principalSubdivision||'Моё место'}catch(e){return 'Моё место'}
+}
+function gps(){return new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('nogeo'));
+  navigator.geolocation.getCurrentPosition(p=>res(p.coords),rej,{timeout:10000,maximumAge:600000})})}
+async function hereByGps(){const c=await gps();return {name:await placeName(c.latitude,c.longitude),lat:+c.latitude.toFixed(3),lon:+c.longitude.toFixed(3)}}
+async function hereByIp(){ // no permission prompt: approximate city from the network address
+  const r=await (await fetch('https://get.geojs.io/v1/ip/geo.json')).json();
+  if(!r.latitude) throw new Error('noip');
+  const lat=+(+r.latitude).toFixed(3), lon=+(+r.longitude).toFixed(3);
+  return {name:await placeName(lat,lon),lat,lon};
+}
+let toastT=0;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2600)}
 function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 async function extendBack(){
@@ -422,14 +454,28 @@ function setZoom(h){spanH=h;document.querySelectorAll('.seg button').forEach(b=>
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>goToday());
 $('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t[idxAt(center)])});
-$('cityForm').addEventListener('submit',e=>{e.preventDefault();$('city').blur();setPin(null);load($('city').value.trim()||'Москва')});
+$('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('city').value.trim();$('city').blur();if(!q)return;
+  $('chartbox').classList.add('loading');
+  let w=null; try{w=await geocode(q)}catch(err){}
+  if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Поиск города недоступен в этом просмотре':'Город «'+q+'» не найден');return}
+  setPin(null); load(w,true)});
+$('city').addEventListener('blur',()=>{setTimeout(()=>window.scrollTo(0,0),50)});
+$('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.add('busy');
+  try{const w=await hereByGps();setPin(null);await load(w,true)}
+  catch(err){toast(err&&err.code===1?'Доступ к геопозиции запрещён в настройках браузера':'Не удалось определить местоположение')}
+  b.classList.remove('busy')});
 addEventListener('resize',draw);
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
 new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 setZoom(+(store.get('span')||72));
-const saved=store.get('city'); if(saved)$('city').value=saved;
-load($('city').value);
+(async()=>{ // start: saved place → silent GPS if already allowed → city by network → Moscow
+  const MSK={name:'Москва',lat:55.756,lon:37.617};
+  let w=null; try{w=JSON.parse(store.get('place')||'null')}catch(e){}
+  if(!w){try{const st=await navigator.permissions?.query({name:'geolocation'}); if(st&&st.state==='granted') w=await hereByGps()}catch(e){}}
+  if(!w){try{w=await hereByIp()}catch(e){}}
+  load(w||MSK,false);
+})();
 })();
 </script>
 </body>
