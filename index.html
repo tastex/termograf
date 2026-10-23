@@ -148,6 +148,9 @@ function css(n){return getComputedStyle(document.documentElement).getPropertyVal
 function fmtT(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'}
 function fmtD(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+'°'}
 function dLabel(ms){const d=new Date(ms);return WD[d.getUTCDay()]+', '+d.getUTCDate()+' '+MON[d.getUTCMonth()]}
+function yearsAgo(ad){const n=Math.max(1,Math.round(ad/365.25)); if(n===1) return 'год назад';
+  const m10=n%10,m100=n%100; return n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')}
+const MONF=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
 function hh(ms){return String(new Date(ms).getUTCHours()).padStart(2,'0')+':00'}
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
 const relDay=ms=>Math.round((dayOf(ms)-dayOf(D.now))/DAY);
@@ -181,7 +184,7 @@ function parse(j,lat){
   const sun={}; (j.daily?.time||[]).forEach((d,i)=>{const day=Date.parse(d+'T00:00:00Z'),r=j.daily.sunrise[i],st=j.daily.sunset[i];sun[day]=r&&st?[P(r),P(st)]:sunApprox(day,lat,12)});
   return {t:f(t),temp:f(j.hourly.temperature_2m),rain:f(j.hourly.precipitation).map(v=>v||0),code:f(j.hourly.weather_code),sun};
 }
-const HIST_DAYS=400; // how far back the page may scroll: a little over a year
+const HIST_DAYS=5*366; // how far back the page may scroll: five years (Open-Meteo archive goes back to 1940)
 let LOC=null, busy=false, pinWant=null;
 // where: {name, lat, lon}
 async function load(where, announce){
@@ -233,7 +236,7 @@ const iso=ms=>new Date(ms).toISOString().slice(0,10);
 async function extendBack(){
   if(busy||!D||D.t[0]<=D.limit) return;
   busy=true; render();
-  const end=D.t[0], start=Math.max(D.limit,end-120*DAY);
+  const end=D.t[0], start=Math.max(D.limit,end-366*DAY);
   try{
     let o;
     if(D.sample){await new Promise(r=>setTimeout(r,250)); o=fakeRange(start,end)}
@@ -250,8 +253,7 @@ async function extendBack(){
 }
 
 /* ---------- view ---------- */
-const maxC=()=>spanH>=4000?D.fut-spanH*H/2:D.fut-H, // the last revealed hour may reach the cursor line
-   minC=()=>D.t[0]+spanH*H/2;
+const maxC=()=>D.fut-H, minC=()=>D.t[0]; // the first and last loaded hours may both reach the cursor line
 function clamp(){center=Math.min(maxC(),Math.max(minC(),center))}
 function goToday(){ // cursor on the current hour
   center=D.t[0]+Math.floor((D.now-D.t[0])/H)*H; pull=0; clamp(); draw();
@@ -335,6 +337,15 @@ function render(){
     if(showRel){g.font='600 11px '+MONO;g.fillStyle=C.ink;g.fillText(rel,x,14)}
     if(l2){g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(l2,x,28)}
   }
+  // sticky month (a year in the year view) while looking at a past year, pushed out by the next one like a list header
+  {const curY=new Date(D.now).getUTCFullYear(), s0=new Date(t0);
+    let cur=yr?Date.UTC(s0.getUTCFullYear(),0,1):Date.UTC(s0.getUTCFullYear(),s0.getUTCMonth(),1);
+    g.font='600 11px '+MONO; g.textBaseline='alphabetic';
+    while(cur<t1&&cur<D.fut){const dt=new Date(cur), nx=yr?Date.UTC(dt.getUTCFullYear()+1,0,1):Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,1);
+      if(dt.getUTCFullYear()!==curY){const txt=yr?String(dt.getUTCFullYear()):MONF[dt.getUTCMonth()]+' '+dt.getUTCFullYear(), w=g.measureText(txt).width;
+        const a=Math.max(X(cur),0), b=Math.min(X(nx),X(D.fut));
+        if(b-a>w+10){g.fillStyle=C.fg;g.fillText(txt,Math.min(a+5,b-w-5),14)}}
+      cur=nx}}
   // rain bars
   const iEnd=idxAt(D.fut-H), i0=Math.max(0,idxAt(t0)-2), i1=Math.min(iEnd,idxAt(t1)+2);
   g.fillStyle=C.rain; g.globalAlpha=.55;
@@ -396,9 +407,9 @@ function render(){
 
 function readout(i){
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms);
-  const ad=-dd, rel=REL[dd]||(dd>0?'прогноз':ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:ad<380?'год назад':'больше года назад');
+  const ad=-dd, rel=REL[dd]||(dd>0?'прогноз':ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yearsAgo(ad));
   $('temp').textContent=fmtT(D.temp[i]);
-  $('when').textContent=dLabel(ms)+' · '+hh(ms);
+  const yy=new Date(ms).getUTCFullYear(); $('when').textContent=dLabel(ms)+(yy!==new Date(D.now).getUTCFullYear()?' '+yy:'')+' · '+hh(ms);
   const tg=rel+(WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
   let lo=1e9,hi=-1e9,rs=0;for(let k=Math.max(0,idxAt(day));k<D.t.length&&D.t[k]<day+DAY;k++){if(D.t[k]<day)continue;lo=Math.min(lo,D.temp[k]);hi=Math.max(hi,D.temp[k]);rs+=D.rain[k]}
   $('cond').textContent=`${fmtT(lo)}…${fmtT(hi)} · ${rs>0?rs.toFixed(1).replace('.',',')+' мм':'сухо'}`;
@@ -425,7 +436,7 @@ function drawOv(C){
   days.forEach(d=>{const x=X(d.k),w=Math.max(1,X(d.k+DAY)-x-1);g.fillRect(x,Y(d.hi),w,Math.max(1.5,Y(d.lo)-Y(d.hi)))});
   g.globalAlpha=1;
   g.font='500 10px '+MONO;g.fillStyle=C.muted;g.textBaseline='alphabetic';
-  for(let d=new Date(a);d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){const m=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(m<a)continue;const x=X(m);g.fillRect(x,0,1,Ht);g.fillText(d.getUTCMonth()===0?String(d.getUTCFullYear()):MON[d.getUTCMonth()],x+3,Ht-2)}
+  for(let d=new Date(a);d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){const m=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(m<a||((b-a)>700*DAY&&d.getUTCMonth()!==0))continue;const x=X(m);g.fillRect(x,0,1,Ht);g.fillText(d.getUTCMonth()===0?String(d.getUTCFullYear()):MON[d.getUTCMonth()],x+3,Ht-2)}
   if(busy){g.fillStyle=C.ink;g.font='500 10px '+MONO;g.fillText('загружаю…',3,10)}
   const x0=Math.max(0,X(center-spanH*H/2)),x1=Math.min(W,X(center+spanH*H/2));
   g.fillStyle=C.fg;g.globalAlpha=.08;g.fillRect(x0,0,x1-x0,Ht);g.globalAlpha=1;
