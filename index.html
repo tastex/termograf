@@ -41,7 +41,7 @@ body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:
 /* header pinned to both edges: big reading + delta on the left, context on the right; every line is a fixed box */
 header{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"temp meta" "delta delta" "verdict verdict";column-gap:12px;row-gap:4px;align-items:end}
 .temp{grid-area:temp;height:1em;font:700 clamp(44px,12vw,72px)/1 var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
-.delta{grid-area:delta;height:28px;display:flex;align-items:baseline;gap:6px;font:500 13px/28px var(--f-data);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
+.delta{grid-area:delta;height:28px;display:flex;align-items:center;gap:6px;font:500 13px/28px var(--f-data);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
 .delta b{font:600 20px/28px var(--f-data);color:var(--fg)}
 .verdict{grid-area:verdict;height:20px;font:500 14px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .verdict.warm{color:var(--hot)}.verdict.cool{color:var(--cold)}
@@ -57,7 +57,8 @@ header{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas
 canvas{display:block;width:100%;height:100%}
 .ovbox{height:54px;position:relative;touch-action:none;cursor:pointer}
 .bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
-.seg{display:inline-flex;background:var(--paper-2);border-radius:999px;padding:3px}
+.seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
+.seg button{display:flex;align-items:center;padding-block:0;line-height:1}
 .seg button,.btn{font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:7px 10px;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--paper);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .btn{color:var(--ink);border:1px solid var(--ink)}
@@ -184,7 +185,7 @@ function parse(j,lat){
   const sun={}; (j.daily?.time||[]).forEach((d,i)=>{const day=Date.parse(d+'T00:00:00Z'),r=j.daily.sunrise[i],st=j.daily.sunset[i];sun[day]=r&&st?[P(r),P(st)]:sunApprox(day,lat,12)});
   return {t:f(t),temp:f(j.hourly.temperature_2m),rain:f(j.hourly.precipitation).map(v=>v||0),code:f(j.hourly.weather_code),sun};
 }
-const HIST_DAYS=5*366; // how far back the page may scroll: five years (Open-Meteo archive goes back to 1940)
+const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten years (Open-Meteo archive goes back to 1940)
 let LOC=null, busy=false, pinWant=null;
 // where: {name, lat, lon}
 async function load(where, announce){
@@ -204,6 +205,7 @@ async function load(where, announce){
     if(window.top===window) $('note').textContent='Нет связи с сервисом погоды, поэтому показан пример данных. Проверьте интернет и откройте страницу ещё раз.';
     $('note').hidden=false;
   }
+  rebuildDays();
   D.limit=dayOf(D.now)-HIST_DAYS*DAY;
   D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); // revealed up to the end of the day after tomorrow
   yMin=null; pin=null;
@@ -233,6 +235,15 @@ let toastT=0;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?5200:2600)}
 function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
+function rebuildDays(){ // one record per day, so wide views and the overview never walk every hour while scrolling
+  const d0=dayOf(D.t[0]), n=Math.round((dayOf(D.t[D.t.length-1])-d0)/DAY)+1, days=new Array(n);
+  let gl=1e9,gh=-1e9;
+  for(let i=0;i<D.t.length;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i];let d=days[j];
+    if(!d)d=days[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
+    if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
+  D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey='';
+}
+const dayRange=(a,b)=>{const i=Math.max(0,Math.floor((a-D.d0)/DAY)), j=Math.min(D.days.length-1,Math.floor((b-D.d0)/DAY)); const out=[]; for(let k=i;k<=j;k++) if(D.days[k]) out.push(D.days[k]); return out};
 async function extendBack(){
   if(busy||!D||D.t[0]<=D.limit) return;
   busy=true; render();
@@ -247,7 +258,7 @@ async function extendBack(){
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');
     ['t','temp','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k]));
-    Object.assign(D.sun,o.sun);
+    Object.assign(D.sun,o.sun); rebuildDays();
   }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
   busy=false; applyPin(); draw();
 }
@@ -270,8 +281,8 @@ function moonIcon(g,x,y,c){if(x<6)return;g.save();g.beginPath();g.arc(x,y,5,0,7)
 function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=bg;g.globalAlpha=.88;g.fillRect(x-2,y-8,w+4,15);g.globalAlpha=1;g.fillStyle=fg;g.fillText(txt,x,y)}
 
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
-  const a=idxAt(center-spanH*H*1.5), b=idxAt(center+spanH*H*1.5); let lo=1e9,hi=-1e9;
-  for(let i=a;i<=b;i++){lo=Math.min(lo,D.temp[i]);hi=Math.max(hi,D.temp[i])}
+  let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanH*H*1.5,Math.min(D.fut,center+spanH*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
+  if(lo>hi){lo=D.gl;hi=D.gh}
   let mn=Math.floor((lo-3)/5)*5, mx=Math.ceil((hi+2.5)/5)*5; if(mx-mn<15){mx=mn+15}
   return [mn,mx];
 }
@@ -283,7 +294,9 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-function draw(){ if(!D) return; if(center-spanH*H*2<D.t[0]) extendBack(); easeY(); render(); }
+let drawQ=0;
+function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
+  if(center-Math.max(spanH*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
 function render(){
   if(!D) return;
   const [g,W,Ht]=fit(chart);
@@ -318,16 +331,16 @@ function render(){
   for(let ms=firstH;ms<=t1;ms+=hStep*H){
     const x=Math.round(X(ms))+.5, mid=new Date(ms).getUTCHours()===0;
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
-    if(ms>=D.fut) continue;
+    if(ms>=D.fut||ms<D.t[0]) continue;
     if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
     else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 10px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
   }
   // day labels: sticky to the left edge of each visible day, two lines
   for(let d=d0;d<=t1;d+=DAY){
-    const a=X(d), b=X(d+DAY); if(b<0||a>W||d>=D.fut) continue;
+    const a=X(d), b=X(d+DAY); if(b<0||a>W||d>=D.fut||d<dayOf(D.t[0])) continue;
     const dt=new Date(d); let rel=REL[relDay(d)];
     const wk=dayW<26; if(yr?dt.getUTCDate()!==1:wk&&dt.getUTCDay()!==1) continue; if(wk) rel=null;
-    const l2=yr?(dt.getUTCMonth()===0?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]):dayW>=64?WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:wk?dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:String(dt.getUTCDate());
+    const l2=yr?MON[dt.getUTCMonth()]:dayW>=64?WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:wk?dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:String(dt.getUTCDate());
     const room=yr?dayW*28:wk?dayW*7:dayW;
     g.font='600 11px '+MONO; let w1=rel?g.measureText(rel).width:0;
     if(rel&&dayW<w1+6){rel={'позавчера':'позавч.','послезавтра':'послез.','сегодня':'сегод.'}[rel]||rel;w1=g.measureText(rel).width}
@@ -338,18 +351,18 @@ function render(){
     if(l2){g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(l2,x,28)}
   }
   // sticky month (a year in the year view) while looking at a past year, pushed out by the next one like a list header
-  {const curY=new Date(D.now).getUTCFullYear(), s0=new Date(t0);
+  {const curY=new Date(D.now).getUTCFullYear(), s0=new Date(Math.max(t0,D.t[0]));
     let cur=yr?Date.UTC(s0.getUTCFullYear(),0,1):Date.UTC(s0.getUTCFullYear(),s0.getUTCMonth(),1);
     g.font='600 11px '+MONO; g.textBaseline='alphabetic';
     while(cur<t1&&cur<D.fut){const dt=new Date(cur), nx=yr?Date.UTC(dt.getUTCFullYear()+1,0,1):Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,1);
-      if(dt.getUTCFullYear()!==curY){const txt=yr?String(dt.getUTCFullYear()):MONF[dt.getUTCMonth()]+' '+dt.getUTCFullYear(), w=g.measureText(txt).width;
-        const a=Math.max(X(cur),0), b=Math.min(X(nx),X(D.fut));
+      if(yr||dt.getUTCFullYear()!==curY){const txt=yr?String(dt.getUTCFullYear()):MONF[dt.getUTCMonth()]+' '+dt.getUTCFullYear(), w=g.measureText(txt).width;
+        const a=Math.max(X(cur),X(D.t[0]),0), b=Math.min(X(nx),X(D.fut));
         if(b-a>w+10){g.fillStyle=C.fg;g.fillText(txt,Math.min(a+5,b-w-5),14)}}
       cur=nx}}
   // rain bars
   const iEnd=idxAt(D.fut-H), i0=Math.max(0,idxAt(t0)-2), i1=Math.min(iEnd,idxAt(t1)+2);
   g.fillStyle=C.rain; g.globalAlpha=.55;
-  const days=[]; if(yr){for(let i=i0;i<=i1;i++){const k=dayOf(D.t[i]),d=days[days.length-1];if(!d||d.k!==k)days.push({k,hi:D.temp[i],lo:D.temp[i],sum:D.temp[i],n:1,r:D.rain[i]});else{d.hi=Math.max(d.hi,D.temp[i]);d.lo=Math.min(d.lo,D.temp[i]);d.sum+=D.temp[i];d.n++;d.r+=D.rain[i]}}
+  const days=yr?dayRange(t0-DAY,Math.min(t1,D.fut-H)):[]; if(yr){
     days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH);g.fillRect(X(d.k),Ht-4-h,Math.max(1,dayW-.3),h)}})}
   else for(let i=i0;i<=i1;i++){const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}
   g.globalAlpha=1;
@@ -388,6 +401,13 @@ function render(){
   if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
     if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
       g.beginPath();g.moveTo(px,py-12);g.lineTo(px+5,py-5);g.lineTo(px,py+2);g.lineTo(px-5,py-5);g.closePath();g.fillStyle=C.pin;g.fill()}}
+  // left end: more history is loading, or the ten years are all there is
+  const xs=X(D.t[0]);
+  if(pull<-2&&xs>0){const more=D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
+    const cx2=xs/2, cy2=(top+bot)/2; g.fillStyle=more?C.ink:C.muted; g.strokeStyle=g.fillStyle; g.lineWidth=2; g.lineCap='round';
+    g.beginPath();g.moveTo(cx2+6,cy2-30);g.lineTo(cx2-6,cy2-22);g.lineTo(cx2+6,cy2-14);g.stroke();
+    g.font='600 12px '+MONO; const l=more?['Загружаю','ещё год']:['Дальше','данных нет']; g.fillText(l[0],cx2,cy2+2);
+    g.font='400 11px '+MONO; g.fillText(more?l[1]:'архив — 10 лет',cx2,cy2+18); g.restore()}
   // pull-for-more hint past the revealed end
   if(pull>2&&xf<W){const more=D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15;
     g.save();g.globalAlpha=Math.min(1,pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
@@ -428,16 +448,30 @@ function readout(i){
 }
 function setPin(ms){pin=ms;pinWant=null;store.set('pin',ms==null?null:String(ms));draw()}
 
+let ovKey='', ovBg=null;
 function drawOv(C){
-  const [g,W,Ht]=fit(ov), a=D.t[0], b=D.fut, X=ms=>(ms-a)/(b-a)*W, gl=Math.min(...D.temp), gh=Math.max(...D.temp), Y=v=>4+(gh-v)/(gh-gl||1)*(Ht-8);
-  g.clearRect(0,0,W,Ht);
-  const days=[];for(let i=0;i<D.t.length&&D.t[i]<D.fut;i++){const k=dayOf(D.t[i]);const d=days[days.length-1];if(!d||d.k!==k)days.push({k,lo:D.temp[i],hi:D.temp[i]});else{d.lo=Math.min(d.lo,D.temp[i]);d.hi=Math.max(d.hi,D.temp[i])}}
-  g.fillStyle=C.ink;g.globalAlpha=.55;
-  days.forEach(d=>{const x=X(d.k),w=Math.max(1,X(d.k+DAY)-x-1);g.fillRect(x,Y(d.hi),w,Math.max(1.5,Y(d.lo)-Y(d.hi)))});
-  g.globalAlpha=1;
-  g.font='500 10px '+MONO;g.fillStyle=C.muted;g.textBaseline='alphabetic';
-  for(let d=new Date(a);d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){const m=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(m<a||((b-a)>700*DAY&&d.getUTCMonth()!==0))continue;const x=X(m);g.fillRect(x,0,1,Ht);g.fillText(d.getUTCMonth()===0?String(d.getUTCFullYear()):MON[d.getUTCMonth()],x+3,Ht-2)}
-  if(busy){g.fillStyle=C.ink;g.font='500 10px '+MONO;g.fillText('загружаю…',3,10)}
+  const [g,W,Ht]=fit(ov), a=D.t[0], b=D.fut, X=ms=>(ms-a)/(b-a)*W, dpr=devicePixelRatio||1;
+  const key=[a,b,W,Ht,dpr,C.ink,busy].join('|');
+  if(key!==ovKey){ // the static part (seasons, bars, months) is drawn once and reused while scrolling
+    ovKey=key; ovBg=ovBg||document.createElement('canvas'); ovBg.width=Math.round(W*dpr); ovBg.height=Math.round(Ht*dpr);
+    const o=ovBg.getContext('2d'); o.setTransform(dpr,0,0,dpr,0,0); o.clearRect(0,0,W,Ht);
+    const Y=v=>4+(D.gh-v)/(D.gh-D.gl||1)*(Ht-16), long=(b-a)>700*DAY;
+    // seasons: winter cool, summer warm, as faint bands
+    for(let y=new Date(a).getUTCFullYear()-1;y<=new Date(b).getUTCFullYear();y++){
+      const w0=X(Date.UTC(y,11,1)),w1=X(Date.UTC(y+1,2,1)),s0=X(Date.UTC(y,5,1)),s1=X(Date.UTC(y,8,1));
+      o.globalAlpha=.10;o.fillStyle=C.cold;o.fillRect(w0,0,w1-w0,Ht-10);o.fillStyle=C.hot;o.fillRect(s0,0,s1-s0,Ht-10);o.globalAlpha=1}
+    o.fillStyle=C.ink;o.globalAlpha=.6;
+    for(const d of D.days){if(!d||d.k>=b)continue;const x=X(d.k),w=Math.max(.6,X(d.k+DAY)-x-(long?0:1));o.fillRect(x,Y(d.hi),w,Math.max(1,Y(d.lo)-Y(d.hi)))}
+    o.globalAlpha=1;o.font='500 10px '+MONO;o.textBaseline='alphabetic'; let lastEnd=-1;
+    for(let d=new Date(Date.UTC(new Date(a).getUTCFullYear(),new Date(a).getUTCMonth(),1));d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){
+      const m=d.getTime(); if(m<a) continue; const x=X(m), jan=d.getUTCMonth()===0;
+      o.fillStyle=C.muted;
+      if(jan||!long){o.fillRect(x,0,1,Ht);const tx=jan?String(d.getUTCFullYear()):MON[d.getUTCMonth()];if(x+3>=lastEnd){o.fillText(tx,x+3,Ht-1);lastEnd=x+3+o.measureText(tx).width+3}}
+      else o.fillRect(x,Ht-12,1,3); // small month ticks when years are shown
+    }
+    if(busy){o.fillStyle=C.ink;o.fillText('загружаю…',3,10)}
+  }
+  g.clearRect(0,0,W,Ht); g.drawImage(ovBg,0,0,W,Ht);
   const x0=Math.max(0,X(center-spanH*H/2)),x1=Math.min(W,X(center+spanH*H/2));
   g.fillStyle=C.fg;g.globalAlpha=.08;g.fillRect(x0,0,x1-x0,Ht);g.globalAlpha=1;
   g.strokeStyle=C.fg;g.lineWidth=1.5;g.strokeRect(x0+.75,.75,Math.max(2,x1-x0-1.5),Ht-1.5);
@@ -453,17 +487,19 @@ window.addEventListener('pointermove',e=>{if(!drag)return;
   if(drag.lock!=='x')return;
   const dx=e.clientX-drag.last, now=performance.now();
   const W=box.clientWidth, pph=W/spanH;
-  drag.v=Math.max(minC(),drag.v-dx/pph*H); center=drag.v; clamp();
-  const raw=Math.max(0,(drag.v-maxC())/H*pph); pull=W*0.3*(1-Math.exp(-raw/(W*0.6))); // rubber band
+  drag.v-=dx/pph*H; center=drag.v; clamp();
+  const rr=Math.max(0,(drag.v-maxC())/H*pph), rl=Math.max(0,(minC()-drag.v)/H*pph), rub=r=>W*0.3*(1-Math.exp(-r/(W*0.6))); // rubber band at both ends
+  pull=rr>0?rub(rr):-rub(rl);
   vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();});
 window.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
   if(d.lock!=='x') return;
-  if(pull>0){release();return}
+  if(pull!==0){release();return}
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches)coast();
 });
-window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull>0)release()}});
+window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull!==0)release()}});
 function release(){ // reveal next week if pulled far enough; the pull springs back and the new week slides in
   const W=box.clientWidth, end=D.t[D.t.length-1]+H, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(pull<0) extendBack();
   if(pull>=W*0.15&&D.fut<end){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
   const p0=pull, t0=performance.now();
   const step=now=>{const ms=now-t0;
