@@ -305,7 +305,7 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-let drawQ=0, fade=null, dotV=null;
+let drawQ=0, fade=null, curT=null, lastC=null, spd=0;
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   fade={from,e:0}; const t0=performance.now();
@@ -438,11 +438,15 @@ function render(){
   // center cursor
   const ci=idxAt(center), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
-  const cx=X(center), cyT=(yr?curveAt(center,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):curveAt(center,D.t[0],H,k=>D.temp[k],D.t.length));
-  // the dot follows the curve with a little lag, so a fast swipe makes it glide instead of jump
-  if(dotV==null||!isFinite(dotV)||matchMedia('(prefers-reduced-motion: reduce)').matches) dotV=cyT;
-  else{dotV+=(cyT-dotV)*0.22; if(Math.abs(cyT-dotV)>0.03) draw(); else dotV=cyT}
-  const cy=Y(dotV);
+  // cursor: steps hour by hour (day by day in the year view) when moved slowly, glides with the curve when swiped fast
+  const stepMs=yr?DAY:H, snap=yr?(cd?cd.k+12*H:center):D.t[ci];
+  const now=performance.now(), inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center;
+  spd=spd*0.7+inst*0.3;
+  const want=spd>3?center:snap, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(curT==null||reduce||Math.abs(want-curT)>spanH*H) curT=want; else curT+=(want-curT)*(spd>3?0.5:0.35);
+  if(Math.abs(want-curT)>stepMs*0.01||spd>0.05) draw(); else curT=want;
+  const vAt=t=>yr?curveAt(t,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
+  const cx=X(curT), cy=Y(vAt(curT));
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(Math.round(cx)+.5,top-8);g.lineTo(Math.round(cx)+.5,bot);g.stroke();
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
   readout(ci,yr); drawOv(C);
