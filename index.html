@@ -279,6 +279,13 @@ function sunIcon(g,x,y,c){if(x<6)return;g.save();g.fillStyle=c;g.strokeStyle=c;g
   for(let k=0;k<8;k++){const a=k*Math.PI/4;g.beginPath();g.moveTo(x+Math.cos(a)*5.2,y+Math.sin(a)*5.2);g.lineTo(x+Math.cos(a)*7,y+Math.sin(a)*7);g.stroke()}g.restore()}
 function moonIcon(g,x,y,c){if(x<6)return;g.save();g.beginPath();g.arc(x,y,5,0,7);g.clip();
   g.beginPath();g.arc(x,y,5,0,7);g.arc(x+2.8,y-1.8,4.4,0,7,true);g.fillStyle=c;g.fill('evenodd');g.restore()}
+// value of the smoothed line at time t: the line is drawn as quadratic curves between midpoints of evenly spaced samples
+function curveAt(t,start,step,val,n){
+  const k=Math.max(0,Math.min(n-1,Math.round((t-start)/step))), u=Math.max(0,Math.min(1,(t-(start+k*step-step/2))/step));
+  const v=val(k); if(v==null) return 0;
+  const a=val(k-1), b=val(k+1), m0=a==null||k===0?v:(a+v)/2, m1=b==null||k===n-1?v:(v+b)/2;
+  return (1-u)*(1-u)*m0+2*u*(1-u)*v+u*u*m1;
+}
 function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=bg;g.globalAlpha=.88;g.fillRect(x-2,y-8,w+4,15);g.globalAlpha=1;g.fillStyle=fg;g.fillText(txt,x,y)}
 
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
@@ -427,7 +434,8 @@ function render(){
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   // center cursor
   const ci=idxAt(center), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
-  const cx=cd?X(cd.k+12*H):X(D.t[ci]), cy=cd?Y(cd.sum/cd.n):Y(D.temp[ci]);
+  // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
+  const cx=X(center), cy=Y(yr?curveAt(center,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):curveAt(center,D.t[0],H,k=>D.temp[k],D.t.length));
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(Math.round(cx)+.5,top-8);g.lineTo(Math.round(cx)+.5,bot);g.stroke();
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
   readout(ci,yr); drawOv(C);
