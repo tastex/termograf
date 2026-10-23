@@ -305,7 +305,7 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-let drawQ=0, fade=null, curT=null, lastC=null, spd=0;
+let drawQ=0, fade=null, vc=null, lastC=null, spd=0;
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   fade={from,e:0}; const t0=performance.now();
@@ -318,7 +318,15 @@ function render(){
   if(!D) return;
   const [g,W,Ht]=fit(chart);
   const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin'].forEach(k=>C[k]=css('--'+k));
-  const pph=W/spanH, t0=center-spanH*H/2+pull/pph*H, t1=t0+spanH*H, top=60, bot=Ht-34, rainH=26;
+  const pph=W/spanH;
+  // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
+  // so the cursor sits exactly on a reading; swiped fast, the chart runs smoothly and the dot glides along the curve
+  const yrv=pph*24<4, snapAt=t=>yrv?dayOf(t)+12*H:D.t[idxAt(t)];
+  const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
+  const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(vc==null||reduce||Math.abs(want-vc)>spanH*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
+  if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else vc=want;
+  const t0=vc-spanH*H/2+pull/pph*H, t1=t0+spanH*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right
   const Xb=ms=>(ms-t0)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
@@ -436,17 +444,9 @@ function render(){
     const l=more?(ready?['Отпустите','покажу неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   // center cursor
-  const ci=idxAt(center), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
+  const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
-  // cursor: steps hour by hour (day by day in the year view) when moved slowly, glides with the curve when swiped fast
-  const stepMs=yr?DAY:H, snap=yr?(cd?cd.k+12*H:center):D.t[ci];
-  const now=performance.now(), inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center;
-  spd=spd*0.7+inst*0.3;
-  const want=spd>3?center:snap, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(curT==null||reduce||Math.abs(want-curT)>spanH*H) curT=want; else curT+=(want-curT)*(spd>3?0.5:0.35);
-  if(Math.abs(want-curT)>stepMs*0.01||spd>0.05) draw(); else curT=want;
-  const vAt=t=>yr?curveAt(t,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
-  const cx=X(curT), cy=Y(vAt(curT));
+  const cx=X(vc), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(Math.round(cx)+.5,top-8);g.lineTo(Math.round(cx)+.5,bot);g.stroke();
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
   readout(ci,yr); drawOv(C);
