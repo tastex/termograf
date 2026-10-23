@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Термограф</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: one screen — readout on top, draggable thermograph ribbon fills the middle, 3‑month overview strip as a scrubber below */
+:root{
+  --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
+  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13); --rain:#2f86b8;
+  --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --night:rgba(44,62,104,.06); --hot:#c2482a; --cold:#1f74b5; --pin:#b07400; --warn:#8a5a00; --warn-bg:#fff3d6;
+  --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
+  --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-data:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
+  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
+  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
+.app{height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
+/* header pinned to both edges: big reading + delta on the left, context on the right; every line is a fixed box */
+header{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"temp meta" "delta delta" "verdict verdict";column-gap:12px;row-gap:4px;align-items:end}
+.temp{grid-area:temp;height:1em;font:700 clamp(44px,12vw,72px)/1 var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
+.delta{grid-area:delta;height:28px;display:flex;align-items:baseline;gap:6px;font:500 13px/28px var(--f-data);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
+.delta b{font:600 20px/28px var(--f-data);color:var(--fg)}
+.verdict{grid-area:verdict;height:20px;font:500 14px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.verdict.warm{color:var(--hot)}.verdict.cool{color:var(--cold)}
+.delta button{align-self:center;font:500 12px/1 var(--f-data);color:var(--pin);background:transparent;border:1px solid var(--pin);border-radius:999px;padding:2px 7px;cursor:pointer}
+.meta{grid-area:meta;display:grid;grid-template-rows:20px 18px 18px;row-gap:2px;min-width:0;justify-items:end;text-align:right;padding-bottom:4px}
+.meta>div,.cond{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px}
+.when{font:500 14px var(--f-data);font-variant-numeric:tabular-nums}
+.tag{font:500 13px var(--f-body);color:var(--ink)}
+.cond{font:400 12px/18px var(--f-data);color:var(--muted);font-variant-numeric:tabular-nums}
+.chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
+  touch-action:pan-y;cursor:grab;user-select:none}
+.chartbox:active{cursor:grabbing}
+canvas{display:block;width:100%;height:100%}
+.ovbox{height:54px;position:relative;touch-action:none;cursor:pointer}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.seg{display:inline-flex;background:var(--paper-2);border-radius:999px;padding:3px}
+.seg button,.btn{font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:7px 11px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.btn{color:var(--ink);border:1px solid var(--ink)}
+.acts{display:flex;gap:8px;align-items:center}
+.ibtn{width:36px;height:36px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--pin);background:transparent;color:var(--pin);cursor:pointer;padding:0}
+.ibtn[aria-pressed="true"]{background:var(--pin);color:var(--paper)}
+.btn:disabled{opacity:.35;cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.note{font:400 12px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
+.foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px}
+.city{display:flex;align-items:center;gap:6px;min-width:0}
+.city input{font:500 15px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:14ch;min-width:0}
+.city input:focus{outline:none;border-bottom-color:var(--ink)}
+.city .lbl{font:500 11px var(--f-data);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.src{font:400 11px var(--f-data);color:var(--muted)}
+.src a{color:inherit}
+</style>
+<style>body{margin:0}:root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="temp" id="temp">—</div>
+    <div class="meta">
+      <div class="when" id="when">Загрузка…</div>
+      <div class="tag" id="tag">&nbsp;</div>
+      <div class="cond" id="cond">&nbsp;</div>
+    </div>
+    <div class="delta" id="delta">&nbsp;</div>
+    <div class="verdict" id="verdict">&nbsp;</div>
+  </header>
+  <div class="note" id="note" hidden>Это пример данных: в просмотре Claude страница не может обратиться к сервису погоды. Откройте файл в обычном браузере — подтянутся реальные данные: прогноз на две недели и архив за год.</div>
+  <div class="chartbox" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
+  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор всего загруженного периода"></canvas></div>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Масштаб">
+      <button id="z3" data-h="72">3 дня</button>
+      <button id="z7" data-h="168">Неделя</button>
+      <button id="z30" data-h="720">Месяц</button>
+    </div>
+    <div class="acts">
+      <button class="ibtn" id="pinBtn" type="button" aria-pressed="false" aria-label="Поставить метку на точку под курсором"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 4H7l3-4z"/></svg></button>
+      <button class="btn" id="today">К сегодня</button>
+    </div>
+  </div>
+  <div class="foot">
+    <form class="city" id="cityForm">
+      <span class="lbl">Город</span>
+      <input id="city" value="Москва" autocomplete="off" aria-label="Город">
+    </form>
+    <div class="src">Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
+  </div>
+</div>
+
+<script>
+(()=>{
+const H=3600e3, DAY=24*H;
+const $=id=>document.getElementById(id);
+const chart=$('chart'), ov=$('ov'), box=$('chartbox'), ovbox=$('ovbox');
+const WD=['вс','пн','вт','ср','чт','пт','сб'], MON=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const REL={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'};
+const WC={0:'ясно',1:'почти ясно',2:'облачно',3:'пасмурно',45:'туман',48:'изморозь',51:'морось',53:'морось',55:'сильная морось',56:'ледяная морось',57:'ледяная морось',61:'небольшой дождь',63:'дождь',65:'сильный дождь',66:'ледяной дождь',67:'ледяной дождь',71:'небольшой снег',73:'снег',75:'сильный снег',77:'снежная крупа',80:'ливень',81:'ливень',82:'сильный ливень',85:'снегопад',86:'сильный снегопад',95:'гроза',96:'гроза с градом',99:'гроза с градом'};
+const MONO='"IBM Plex Mono",ui-monospace,monospace';
+
+let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
+let warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
+
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function fmtT(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'}
+function fmtD(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+'°'}
+function dLabel(ms){const d=new Date(ms);return WD[d.getUTCDay()]+', '+d.getUTCDate()+' '+MON[d.getUTCMonth()]}
+function hh(ms){return String(new Date(ms).getUTCHours()).padStart(2,'0')+':00'}
+const dayOf=ms=>Math.floor(ms/DAY)*DAY;
+const relDay=ms=>Math.round((dayOf(ms)-dayOf(D.now))/DAY);
+
+/* ---------- data ---------- */
+function sunApprox(day,lat,noonH){
+  const doy=(day-Date.UTC(new Date(day).getUTCFullYear(),0,1))/DAY;
+  const dec=23.44*Math.PI/180*Math.sin(2*Math.PI*(284+doy)/365), L=lat*Math.PI/180;
+  const c=-Math.tan(L)*Math.tan(dec); if(c<=-1||c>=1) return null;
+  const half=Math.acos(c)*180/Math.PI/15;
+  return [day+(noonH-half)*H, day+(noonH+half)*H];
+}
+// deterministic fake weather for any hour, so the sample can also "load" older periods
+function fakeHour(x,lat){
+  const k=x/H, n=v=>{const s=Math.sin(v*12.9898)*43758.5453;return s-Math.floor(s)};
+  const doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, hr=new Date(x).getUTCHours();
+  const season=6+13*Math.cos((doy-200)/365*2*Math.PI);
+  const drift=3*Math.sin(k/41)+2*Math.sin(k/97+1)+1.5*Math.sin(k/173+2);
+  const wet=Math.sin(k/53)+Math.sin(k/23+3)>1.05, amp=wet?2:4.5;
+  const r=wet&&n(k)>.4?Math.round(n(k+.5)*16)/10:0;
+  return [season+drift+amp*Math.cos((hr-15)/24*2*Math.PI), r, r?(r>1?63:61):(wet?3:(n(k+.3)<.5?1:2))];
+}
+function fakeRange(a,b){
+  const o={t:[],temp:[],rain:[],code:[],sun:{}};
+  for(let x=a;x<b;x+=H){if(x%DAY===0)o.sun[x]=sunApprox(x,55.75,12.5);const [v,r,c]=fakeHour(x);o.t.push(x);o.temp.push(v);o.rain.push(r);o.code.push(c)}
+  return o;
+}
+function parse(j,lat){
+  const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
+  const t=j.hourly.time.map(P), keep=t.map((_,i)=>j.hourly.temperature_2m[i]!=null), f=a=>a.filter((_,i)=>keep[i]);
+  const sun={}; (j.daily?.time||[]).forEach((d,i)=>{const day=Date.parse(d+'T00:00:00Z'),r=j.daily.sunrise[i],st=j.daily.sunset[i];sun[day]=r&&st?[P(r),P(st)]:sunApprox(day,lat,12)});
+  return {t:f(t),temp:f(j.hourly.temperature_2m),rain:f(j.hourly.precipitation).map(v=>v||0),code:f(j.hourly.weather_code),sun};
+}
+const HIST_DAYS=400; // how far back the page may scroll: a little over a year
+let LOC=null, busy=false, pinWant=null;
+async function load(name){
+  $('when').textContent='Загрузка…';
+  try{
+    const g=await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name='+encodeURIComponent(name))).json();
+    const p=g.results&&g.results[0]; if(!p) throw new Error('nocity');
+    $('city').value=p.name;
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${p.latitude}&longitude=${p.longitude}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`;
+    const j=await (await fetch(u)).json();
+    D=parse(j,p.latitude); D.now=Date.now()+j.utc_offset_seconds*1000;
+    LOC={lat:p.latitude,lon:p.longitude};
+    $('note').hidden=true; store.set('city',p.name);
+  }catch(e){
+    if(e.message==='nocity'&&D&&!D.sample){$('when').textContent='Город не найден';return}
+    const now=Math.floor((Date.now()+3*H)/H)*H;
+    D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.sample=true; LOC=null;
+    $('note').hidden=false;
+  }
+  D.limit=dayOf(D.now)-HIST_DAYS*DAY;
+  D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); // revealed up to the end of the day after tomorrow
+  yMin=null; pin=null;
+  const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin();
+  goToday();
+}
+function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
+const iso=ms=>new Date(ms).toISOString().slice(0,10);
+async function extendBack(){
+  if(busy||!D||D.t[0]<=D.limit) return;
+  busy=true; render();
+  const end=D.t[0], start=Math.max(D.limit,end-120*DAY);
+  try{
+    let o;
+    if(D.sample){await new Promise(r=>setTimeout(r,250)); o=fakeRange(start,end)}
+    else{
+      const u=`https://archive-api.open-meteo.com/v1/archive?latitude=${LOC.lat}&longitude=${LOC.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&timezone=auto`;
+      o=parse(await (await fetch(u)).json(),LOC.lat);
+    }
+    const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
+    if(cut===0) throw new Error('empty');
+    ['t','temp','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k]));
+    Object.assign(D.sun,o.sun);
+  }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
+  busy=false; applyPin(); draw();
+}
+
+/* ---------- view ---------- */
+const maxC=()=>D.fut-H, // the last revealed hour may reach the cursor line
+   minC=()=>D.t[0]+spanH*H/2;
+function clamp(){center=Math.max(minC(),Math.min(maxC(),center))}
+function goToday(){ // today, tomorrow and the day after
+  center=dayOf(D.now)+3*DAY-spanH*H/2; pull=0; clamp(); draw();
+}
+function idxAt(ms){return Math.max(0,Math.min(D.t.length-1,Math.round((ms-D.t[0])/H)))}
+function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
+  if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
+  const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
+function sunIcon(g,x,y,c){if(x<6)return;g.save();g.fillStyle=c;g.strokeStyle=c;g.lineWidth=1.3;g.lineCap='round';
+  g.beginPath();g.arc(x,y,3.2,0,7);g.fill();
+  for(let k=0;k<8;k++){const a=k*Math.PI/4;g.beginPath();g.moveTo(x+Math.cos(a)*5.2,y+Math.sin(a)*5.2);g.lineTo(x+Math.cos(a)*7,y+Math.sin(a)*7);g.stroke()}g.restore()}
+function moonIcon(g,x,y,c){if(x<6)return;g.save();g.beginPath();g.arc(x,y,5,0,7);g.clip();
+  g.beginPath();g.arc(x,y,5,0,7);g.arc(x+2.8,y-1.8,4.4,0,7,true);g.fillStyle=c;g.fill('evenodd');g.restore()}
+function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=bg;g.globalAlpha=.88;g.fillRect(x-2,y-8,w+4,15);g.globalAlpha=1;g.fillStyle=fg;g.fillText(txt,x,y)}
+
+function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
+  const a=idxAt(center-spanH*H*1.5), b=idxAt(center+spanH*H*1.5); let lo=1e9,hi=-1e9;
+  for(let i=a;i<=b;i++){lo=Math.min(lo,D.temp[i]);hi=Math.max(hi,D.temp[i])}
+  let mn=Math.floor((lo-3)/5)*5, mx=Math.ceil((hi+2.5)/5)*5; if(mx-mn<15){mx=mn+15}
+  return [mn,mx];
+}
+function easeY(){
+  const [a,b]=yTarget(); if(yMin==null){yMin=a;yMax=b;return}
+  if(a===yMin&&b===yMax) return;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){yMin=a;yMax=b;return}
+  if(!yRaf){const step=()=>{const [ta,tb]=yTarget();yMin+=(ta-yMin)*.18;yMax+=(tb-yMax)*.18;
+      if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
+      render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
+}
+function draw(){ if(!D) return; if(center-spanH*H*2<D.t[0]) extendBack(); easeY(); render(); }
+function render(){
+  if(!D) return;
+  const [g,W,Ht]=fit(chart);
+  const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin'].forEach(k=>C[k]=css('--'+k));
+  const pph=W/spanH, t0=center-spanH*H/2+pull/pph*H, t1=t0+spanH*H, top=60, bot=Ht-34, rainH=26;
+  // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
+  // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right
+  const Xb=ms=>(ms-t0)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
+  const X=ms=>Xb(ms)+(warp&&ms>=warp.from?wShift:0), Y=v=>top+(yMax-v)/(yMax-yMin)*(bot-top);
+  geom={t0,pph,X};
+  g.clearRect(0,0,W,Ht);
+  const dayW=pph*24, d0=dayOf(t0)-DAY;
+  // night bands
+  g.fillStyle=C.night; if(dayW>=20)
+  for(let d=d0;d<=t1+DAY&&d<D.fut;d+=DAY){const s=D.sun[d];
+    if(!s){continue}
+    const a=X(d),r=X(s[0]),st=X(s[1]),b=X(d+DAY);
+    if(r>a)g.fillRect(a,36,r-a,bot-36); if(b>st)g.fillRect(st,36,b-st,bot-36);}
+  // sun / moon marks in the middle of each day and night
+  {const d=dayOf(D.now),s=D.sun[d],n=D.sun[d+DAY]; if(s){ // only for the current day and the night after it
+    if(X(s[1])-X(s[0])>=20) sunIcon(g,X((s[0]+s[1])/2),48,C.muted);
+    const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) moonIcon(g,X((s[1]+ne)/2),48,C.muted);}}
+  // future
+  const xn=X(D.now), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
+  // horizontal grid
+  g.lineWidth=1;
+  const stepY=(yMax-yMin)>40?10:5, yFirst=Math.ceil(yMin/stepY)*stepY;
+  for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;g.strokeStyle=v===0?C['grid-strong']:C.grid;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+  // hour ticks + midnight lines
+  const hStep=pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
+  g.textBaseline='alphabetic';
+  for(let ms=firstH;ms<=t1;ms+=hStep*H){
+    const x=Math.round(X(ms))+.5, mid=new Date(ms).getUTCHours()===0;
+    if(mid&&dayW<20&&new Date(ms).getUTCDay()!==1) continue;
+    if(ms>=D.fut) continue;
+    if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
+    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 10px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
+  }
+  // day labels: sticky to the left edge of each visible day, two lines
+  for(let d=d0;d<=t1;d+=DAY){
+    const a=X(d), b=X(d+DAY); if(b<0||a>W||d>=D.fut) continue;
+    const dt=new Date(d); let rel=REL[relDay(d)];
+    const wk=dayW<26; if(wk&&dt.getUTCDay()!==1) continue; if(wk) rel=null;
+    const l2=dayW>=64?WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:wk?dt.getUTCDate()+' '+MON[dt.getUTCMonth()]:String(dt.getUTCDate());
+    const room=wk?dayW*7:dayW;
+    g.font='600 11px '+MONO; let w1=rel?g.measureText(rel).width:0;
+    if(rel&&dayW<w1+6){rel={'позавчера':'позавч.','послезавтра':'послез.','сегодня':'сегод.'}[rel]||rel;w1=g.measureText(rel).width}
+    g.font='400 11px '+MONO; const w2=g.measureText(l2).width;
+    const showRel=rel&&room>=w1+6, w=Math.max(showRel?w1:0,w2); if(!w||room<w+6) continue;
+    const x=Math.min(Math.max(a,0)+5,a+room-w-5);
+    if(showRel){g.font='600 11px '+MONO;g.fillStyle=C.ink;g.fillText(rel,x,14)}
+    if(l2){g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(l2,x,28)}
+  }
+  // rain bars
+  const iEnd=idxAt(D.fut-H), i0=Math.max(0,idxAt(t0)-2), i1=Math.min(iEnd,idxAt(t1)+2);
+  g.fillStyle=C.rain; g.globalAlpha=.55;
+  for(let i=i0;i<=i1;i++){const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}
+  g.globalAlpha=1;
+  // pinned reference line
+  if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
+  // temperature trace
+  const segs=[[],[]];for(let i=i0;i<=i1;i++)segs[warp&&D.t[i]>=warp.from?1:0].push([X(D.t[i]),Y(D.temp[i])]);
+  const path=pts=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
+  segs.forEach(pts=>{ if(pts.length<2) return;
+    path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill();
+    g.save();g.beginPath();g.rect(0,0,Math.max(0,xn),Ht);g.clip();path(pts);g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore();
+    if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
+  });
+  // y labels
+  g.textBaseline='middle';g.font='500 11px '+MONO;
+  for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtT(v),2,y,C.muted,C.paper)}
+  // extremes: per day when there is room, otherwise for the whole visible window
+  const ext=[];
+  if(dayW>=40){for(let d=d0;d<=t1;d+=DAY){let mx=-1,mn=-1;for(let i=i0;i<=i1;i++){if(D.t[i]<d||D.t[i]>=d+DAY)continue;if(mx<0||D.temp[i]>D.temp[mx])mx=i;if(mn<0||D.temp[i]<D.temp[mn])mn=i}
+      if(mx>=0){const xa=X(D.t[mx]),xb=X(D.t[mn]);if(xa>=0&&xa<=W)ext.push([mx,1]);if(xb>=0&&xb<=W)ext.push([mn,-1])}}}
+  else{let mx=-1,mn=-1;for(let i=i0;i<=i1;i++){const x=X(D.t[i]);if(x<0||x>W)continue;if(mx<0||D.temp[i]>D.temp[mx])mx=i;if(mn<0||D.temp[i]<D.temp[mn])mn=i}if(mx>=0){ext.push([mx,1],[mn,-1])}}
+  g.font='600 11px '+MONO;g.textBaseline='middle';
+  ext.forEach(([i,s])=>{const x=X(D.t[i]),y=Y(D.temp[i]),c=s>0?C.hot:C.cold,txt=fmtT(D.temp[i]),w=g.measureText(txt).width;
+    g.beginPath();g.arc(x,y,3,0,7);g.fillStyle=c;g.fill();
+    const tx=Math.min(W-w-3,Math.max(3,x-w/2)), ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
+    tagText(g,txt,tx,ty,c,C.paper)});
+  // now marker
+  if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(xn+.5,top-8);g.lineTo(xn+.5,bot);g.stroke();g.setLineDash([]);
+    g.textBaseline='alphabetic';g.font='500 10px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
+  // pin marker
+  if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
+    if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
+      g.beginPath();g.moveTo(px,py-12);g.lineTo(px+5,py-5);g.lineTo(px,py+2);g.lineTo(px-5,py-5);g.closePath();g.fillStyle=C.pin;g.fill()}}
+  // pull-for-more hint past the revealed end
+  if(pull>2&&xf<W){const more=D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15;
+    g.save();g.globalAlpha=Math.min(1,pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
+    const cx2=xf+(W-xf)/2, cy2=(top+bot)/2;
+    g.strokeStyle=more?C.ink:C.muted;g.lineWidth=2;g.lineCap='round';g.beginPath();
+    g.moveTo(cx2-6,cy2-30);g.lineTo(cx2+6,cy2-22);g.lineTo(cx2-6,cy2-14);g.stroke();
+    g.fillStyle=more?C.ink:C.muted;g.font='600 12px '+MONO;
+    const l=more?(ready?['Отпустите',' ']:['Тяните —','неделя вперёд']):['Дальше','прогноза нет'];
+    g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
+  // center cursor
+  const ci=idxAt(center), cx=X(D.t[ci]), cy=Y(D.temp[ci]);
+  g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(Math.round(cx)+.5,top-8);g.lineTo(Math.round(cx)+.5,bot);g.stroke();
+  g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
+  readout(ci); drawOv(C);
+  $('today').disabled=Math.abs(center-D.now)<spanH*H*0.6;
+}
+
+function readout(i){
+  const ms=D.t[i], day=dayOf(ms), dd=relDay(ms);
+  const ad=-dd, rel=REL[dd]||(dd>0?'прогноз':ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:ad<380?'год назад':'больше года назад');
+  $('temp').textContent=fmtT(D.temp[i]);
+  $('when').textContent=dLabel(ms)+' · '+hh(ms);
+  const tg=rel+(WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
+  let lo=1e9,hi=-1e9,rs=0;for(let k=Math.max(0,idxAt(day));k<D.t.length&&D.t[k]<day+DAY;k++){if(D.t[k]<day)continue;lo=Math.min(lo,D.temp[k]);hi=Math.max(hi,D.temp[k]);rs+=D.rain[k]}
+  $('cond').textContent=`${fmtT(lo)}…${fmtT(hi)} · ${rs>0?rs.toFixed(1).replace('.',',')+' мм':'сухо'}`;
+  // delta against the pin, or against now
+  const ref=pin!=null?idxAt(pin):idxAt(D.now), el=$('delta'); el.textContent='';
+  const dv=D.temp[i]-D.temp[ref], b=document.createElement('b'); b.textContent='Δ '+fmtD(dv); el.append(b);
+  const ad2=Math.abs(dv), w=dv>0?'теплее':'холоднее';
+  const vt=ad2<1?'Так же':ad2<3?'Чуть '+w:ad2<6?w[0].toUpperCase()+w.slice(1):ad2<10?'Заметно '+w:ad2<15?'Сильно '+w:'Совсем другая погода, намного '+w;
+  const vd=$('verdict'); vd.textContent=vt; vd.className='verdict'+(ad2<1?'':dv>0?' warm':' cool');
+  if(pin!=null){
+    const pd=REL[relDay(D.t[ref])], lab=pd?pd+' '+hh(D.t[ref]):new Date(D.t[ref]).getUTCDate()+' '+MON[new Date(D.t[ref]).getUTCMonth()]+' '+hh(D.t[ref]);
+    el.append(' к '+lab+' ');
+    const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
+  } else el.append(' к сейчас');
+  const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
+}
+function setPin(ms){pin=ms;pinWant=null;store.set('pin',ms==null?null:String(ms));draw()}
+
+function drawOv(C){
+  const [g,W,Ht]=fit(ov), a=D.t[0], b=D.fut, X=ms=>(ms-a)/(b-a)*W, gl=Math.min(...D.temp), gh=Math.max(...D.temp), Y=v=>4+(gh-v)/(gh-gl||1)*(Ht-8);
+  g.clearRect(0,0,W,Ht);
+  const days=[];for(let i=0;i<D.t.length&&D.t[i]<D.fut;i++){const k=dayOf(D.t[i]);const d=days[days.length-1];if(!d||d.k!==k)days.push({k,lo:D.temp[i],hi:D.temp[i]});else{d.lo=Math.min(d.lo,D.temp[i]);d.hi=Math.max(d.hi,D.temp[i])}}
+  g.fillStyle=C.ink;g.globalAlpha=.55;
+  days.forEach(d=>{const x=X(d.k),w=Math.max(1,X(d.k+DAY)-x-1);g.fillRect(x,Y(d.hi),w,Math.max(1.5,Y(d.lo)-Y(d.hi)))});
+  g.globalAlpha=1;
+  g.font='500 10px '+MONO;g.fillStyle=C.muted;g.textBaseline='alphabetic';
+  for(let d=new Date(a);d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){const m=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(m<a)continue;const x=X(m);g.fillRect(x,0,1,Ht);g.fillText(d.getUTCMonth()===0?String(d.getUTCFullYear()):MON[d.getUTCMonth()],x+3,Ht-2)}
+  if(busy){g.fillStyle=C.ink;g.font='500 10px '+MONO;g.fillText('загружаю…',3,10)}
+  const x0=Math.max(0,X(center-spanH*H/2)),x1=Math.min(W,X(center+spanH*H/2));
+  g.fillStyle=C.fg;g.globalAlpha=.08;g.fillRect(x0,0,x1-x0,Ht);g.globalAlpha=1;
+  g.strokeStyle=C.fg;g.lineWidth=1.5;g.strokeRect(x0+.75,.75,Math.max(2,x1-x0-1.5),Ht-1.5);
+  g.fillStyle=C.fg;g.fillRect(X(D.now)-.5,0,1,Ht);
+  if(pin!=null){g.fillStyle=C.pin;g.fillRect(X(pin)-1,0,2,Ht)}
+}
+
+/* ---------- interaction ---------- */
+let drag=null;
+box.addEventListener('pointerdown',e=>{if(!D)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanH)*H};vel=0});
+window.addEventListener('pointermove',e=>{if(!drag)return;
+  if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
+  if(drag.lock!=='x')return;
+  const dx=e.clientX-drag.last, now=performance.now();
+  const W=box.clientWidth, pph=W/spanH;
+  drag.v=Math.max(minC(),drag.v-dx/pph*H); center=drag.v; clamp();
+  const raw=Math.max(0,(drag.v-maxC())/H*pph); pull=W*0.3*(1-Math.exp(-raw/(W*0.6))); // rubber band
+  vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();});
+window.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
+  if(d.lock!=='x') return;
+  if(pull>0){release();return}
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches)coast();
+});
+window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull>0)release()}});
+function release(){ // reveal next week if pulled far enough; the pull springs back and the new week slides in
+  const W=box.clientWidth, end=D.t[D.t.length-1]+H, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(pull>=W*0.15&&D.fut<end){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
+  const p0=pull, t0=performance.now();
+  const step=now=>{const ms=now-t0;
+    const kp=reduce?1:Math.min(1,ms/320); pull=p0*Math.pow(1-kp,3);
+    let done=kp>=1;
+    if(warp){const kw=Math.min(1,ms/650); warp.e=1-Math.pow(1-kw,4); if(kw>=1) warp=null; else done=false}
+    draw(); if(!done) raf=requestAnimationFrame(step)};
+  raf=requestAnimationFrame(step);
+}
+function coast(){const step=()=>{vel*=.94;if(Math.abs(vel)<.02)return;center-=vel*16/(box.clientWidth/spanH)*H;const c=center;clamp();draw();if(c!==center)return;raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)}
+box.addEventListener('wheel',e=>{if(!D)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center+=d/(box.clientWidth/spanH)*H;clamp();draw()},{passive:false});
+box.tabIndex=0;
+box.addEventListener('keydown',e=>{if(!D)return;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center+=(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?DAY:H);clamp();draw();e.preventDefault()}
+  if(e.key==='Enter'||e.key===' '){setPin(pin!=null&&idxAt(pin)===idxAt(center)?null:D.t[idxAt(center)]);e.preventDefault()}});
+const ovSet=e=>{const r=ovbox.getBoundingClientRect();const f=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));center=D.t[0]+f*(D.fut-D.t[0]);clamp();draw()};
+let ovDrag=false;
+ovbox.addEventListener('pointerdown',e=>{if(!D)return;ovDrag=true;ovbox.setPointerCapture?.(e.pointerId);ovSet(e)});
+ovbox.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
+ovbox.addEventListener('pointerup',()=>ovDrag=false);
+
+function setZoom(h){spanH=h;document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
+$('today').addEventListener('click',()=>goToday());
+$('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t[idxAt(center)])});
+$('cityForm').addEventListener('submit',e=>{e.preventDefault();$('city').blur();setPin(null);load($('city').value.trim()||'Москва')});
+addEventListener('resize',draw);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
+new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+setZoom(+(store.get('span')||72));
+const saved=store.get('city'); if(saved)$('city').value=saved;
+load($('city').value);
+})();
+</script>
+</body>
+</html>
