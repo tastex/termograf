@@ -293,7 +293,7 @@ function readout(i){
   $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'');
   PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtT(v);
     const el=$('d'+j); if(v==null||pv==null){el.textContent='\u00a0';el.className='dv';return}
-    const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'так же, как днём раньше':(r>0?'+':'−')+Math.abs(r)+'° за сутки'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
+    const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'так же':(r>0?'+':'−')+Math.abs(r)+'° за сутки'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
 }
 
 /* ---------- overview strip ---------- */
