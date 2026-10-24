@@ -57,7 +57,7 @@ header{display:grid;grid-template-rows:22px auto;row-gap:2px}
 .chartbox{flex:1;min-height:240px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:grab;user-select:none}
 .chartbox:active{cursor:grabbing}
 canvas{display:block;width:100%;height:100%}
-.ovbox{height:48px;position:relative;touch-action:none;cursor:pointer}
+.ovbox{height:54px;position:relative;touch-action:none;cursor:pointer}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
 .seg button{display:flex;align-items:center;font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:0 9px;cursor:pointer}
@@ -65,10 +65,13 @@ canvas{display:block;width:100%;height:100%}
 .ibtn{box-sizing:border-box;flex:none;width:36px;height:36px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer;padding:0}
 .ibtn:disabled{opacity:.35;cursor:default}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.foot{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;font:400 13px var(--f-body);color:var(--muted)}
+/* the bottom block matches the main page height for height, so it stays put when switching between them */
+.foot{height:32px;display:flex;align-items:center;gap:6px;font:400 13px var(--f-body);color:var(--muted)}
 .foot b{font:500 16px var(--f-body);color:var(--fg)}
-.foot a{color:inherit}
-.foot a.back{color:var(--ink)}
+.links{height:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;font:400 13px/18px var(--f-body);color:var(--muted);white-space:nowrap}
+.links a{color:inherit}
+.links a.back{color:var(--ink);text-decoration:none}
+.links a.back:hover{text-decoration:underline}
 .note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 @media (prefers-reduced-motion:reduce){.part{transition:none}}
 </style>
@@ -97,7 +100,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     </div>
     <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
-  <div class="foot"><span><b id="city">—</b> · данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></span><a class="back" id="back" href="./">Обычный график</a></div>
+  <div class="foot"><span>Город</span><b id="city">—</b></div>
+  <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><a class="back" id="back" href="./">Обычный график</a></div>
 </div>
 
 <script>
