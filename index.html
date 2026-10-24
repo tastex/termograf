@@ -39,13 +39,13 @@ body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
 /* header: one fixed grid shared by the usual reading and the today view, so nothing moves when they swap */
-.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 18px 42px 26px 20px;row-gap:3px;column-gap:12px;
-  grid-template-areas:"temp when" "temp tag" "temp sub" "l1 l1" "l2 l2"}
+.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 42px 22px 26px 20px;row-gap:3px;column-gap:12px;
+  grid-template-areas:"temp tag" "temp sub" "date date" "l1 l1" "l2 l2"}
 header{position:relative}
 .temp{grid-area:temp;align-self:start;height:64px;font:700 64px/64px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
-.when,.tag,.cond,.tri-pair{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.when{grid-area:when;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums}
-.tag{grid-area:tag;font:500 13px/18px var(--f-body);color:var(--ink)}
+.tag,.cond,.tri-pair{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{grid-area:date;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{grid-area:tag;align-self:center;font:500 16px/22px var(--f-body);color:var(--ink)}
 .cond{grid-area:sub;align-self:start;font:400 13px/18px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
 .delta{grid-area:l1;display:flex;align-items:center;gap:8px;font:400 13px/26px var(--f-body);color:var(--muted);white-space:nowrap;min-width:0}
 .delta b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
@@ -135,7 +135,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
   </header>
-  <div class="note" id="note" hidden>Здесь показан пример: внутри Claude страница не может запросить погоду. Настоящие данные — на tastex.github.io/termograf.</div>
+  <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf</div>
   <div class="chartbox loading" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор всего загруженного периода"></canvas></div>
   <div class="bar">
@@ -188,6 +188,8 @@ function yearsAgo(ad){const n=Math.max(1,Math.round(ad/365.25)); if(n===1) retur
   const m10=n%10,m100=n%100; return n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')}
 const MONF=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
 function hm(ms){const d=new Date(ms);return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')}
+const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
+const DN=['день','дня','дней'], NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
 function hh(ms){return String(new Date(ms).getUTCHours()).padStart(2,'0')+':00'}
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
 const relDay=ms=>Math.round((dayOf(ms)-dayOf(D.now))/DAY);
@@ -276,13 +278,13 @@ async function load(where, announce){
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
     rebuildDays(); D.q=null; D.limit=dayOf(D.now)-HIST_DAYS*DAY; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
     yMin=null; goToday(); loadQ(where);
-    if(window.top===window) $('note').textContent='Сервис погоды не отвечает, поэтому показан пример. Проверьте интернет и обновите страницу.';
+    if(window.top===window) $('note').textContent='Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
     $('note').hidden=false;
   }
   if(first||announce){pin=null; const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin()}
   // times are the city's local time; say so when it differs from the phone's
   const devOff=-new Date().getTimezoneOffset()*60000, hrs=D.off/H, sgn=hrs>=0?'+':'−', tzs='UTC'+sgn+Math.abs(hrs).toString().replace('.',',');
-  $('tz').textContent=D.off!==devOff?'Время местное для города, '+tzs+' · ':'';
+  $('tz').textContent=D.off!==devOff?'Время — местное для города ('+tzs+') · ':'';
   $('chartbox').classList.remove('loading');
   if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
 }
@@ -529,7 +531,7 @@ function render(){
   if(pull<-2&&xs>0){const more=D.partial||D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
     const cx2=xs/2, cy2=(top+bot)/2; g.fillStyle=more?C.ink:C.muted; g.strokeStyle=g.fillStyle; g.lineWidth=2; g.lineCap='round';
     g.beginPath();g.moveTo(cx2+6,cy2-30);g.lineTo(cx2-6,cy2-22);g.lineTo(cx2+6,cy2-14);g.stroke();
-    g.font='600 13px '+MONO; const l=D.partial?['Загружаю','прошлые дни']:more?['Загружаю','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
+    g.font='600 13px '+MONO; const l=D.partial?['Загружаем','прошлые дни']:more?['Загружаем','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
     g.font='400 11px '+MONO; g.fillText(l[1],cx2,cy2+18); g.restore()}
   // pull-for-more hint past the revealed end
   if(pull>2&&xf<W){const more=D.partial||D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15&&!D.partial;
@@ -538,7 +540,7 @@ function render(){
     g.strokeStyle=more?C.ink:C.muted;g.lineWidth=2;g.lineCap='round';g.beginPath();
     g.moveTo(cx2-6,cy2-30);g.lineTo(cx2+6,cy2-22);g.lineTo(cx2-6,cy2-14);g.stroke();
     g.fillStyle=more?C.ink:C.muted;g.font='600 13px '+MONO;
-    const l=D.partial?['Загружаю','прогноз']:more?(ready?['Отпустите','покажу неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
+    const l=D.partial?['Загружаем','прогноз']:more?(ready?['Отпустите —','покажем неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   // center cursor
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
@@ -580,7 +582,7 @@ function trio(i,isNow,tq,yr){
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
-  const ad=-dd, rel=REL[dd]||(dd>0?`через ${dd} дн.`:ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yearsAgo(ad));
+  const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
   const val=yr?rec.sum/rec.n:tq!=null?D.q.temp[qIdx(tq)]:D.temp[i];
   $('temp').textContent=fmtT(val);
   $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
@@ -711,7 +713,7 @@ $('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('
   $('city').blur();hideSugg();if(!q)return;
   $('chartbox').classList.add('loading');
   let w=null; try{w=await geocode(q)}catch(err){}
-  if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Внутри Claude поиск городов не работает':'Город «'+q+'» не найден. Проверьте название');return}
+  if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Внутри Claude поиск городов не работает. Откройте tastex.github.io/termograf':'Город «'+q+'» не найден. Проверьте название');return}
   setPin(null); load(w,true)});
 $('city').addEventListener('blur',()=>{setTimeout(()=>window.scrollTo(0,0),50)});
 $('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.add('busy');
@@ -720,10 +722,10 @@ $('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.a
     // GPS refused or failed: fall back to the city by network and say why
     const framed=window.top!==window, ios=/iP(hone|ad|od)/.test(navigator.userAgent);
     const why=framed?'Внутри Claude геопозиция не работает. Откройте tastex.github.io/termograf'
-      :err&&err.code===1?(ios?'Геопозиция выключена для сайтов: Настройки → Конфиденциальность → Службы геолокации → Сайты Safari':'Браузер не дал доступ к геопозиции')
-      :err&&err.code===3?'Место не определилось вовремя':'Точное место определить не удалось';
+      :err&&err.code===1?(ios?'Геопозиция выключена для сайтов: Настройки → Конфиденциальность → Службы геолокации → Сайты Safari':'Браузер не разрешил определить место. Разрешите доступ к геопозиции в настройках сайта')
+      :err&&err.code===3?'Место не определилось за 10 секунд':'Точное место определить не удалось';
     let w=null; try{w=await hereByIp()}catch(e){}
-    if(w){setPin(null);await load(w,why+'. Показан город, определённый по сети: '+w.name)} else toast(why);
+    if(w){setPin(null);await load(w,why+'. Пока показываем '+w.name+': город определили по интернет‑подключению')} else toast(why);
   }
   b.classList.remove('busy')});
 addEventListener('resize',draw);

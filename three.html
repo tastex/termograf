@@ -39,9 +39,9 @@ html{box-sizing:border-box}
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
-header{display:grid;grid-template-rows:22px auto;row-gap:2px}
-.when{display:flex;justify-content:space-between;gap:12px;font:500 16px/22px var(--f-body);white-space:nowrap;font-variant-numeric:tabular-nums}
-.when span:last-child{color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+header{display:grid;grid-template-rows:22px auto 22px;row-gap:2px}
+.rel{text-align:right;font:500 16px/22px var(--f-body);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{font:500 16px/22px var(--f-body);white-space:nowrap;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
 .cols{display:contents}
 .row{display:grid;grid-template-columns:repeat(3,1fr);column-gap:12px;min-width:0}
 .part{all:unset;display:grid;grid-template-rows:18px 44px 18px;min-width:0;cursor:pointer;transition:opacity .18s ease}
@@ -84,14 +84,15 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
 <div class="app">
   <header>
-    <div class="when"><span id="date">Загрузка…</span><span id="rel"></span></div>
+    <div class="rel" id="rel">&nbsp;</div>
     <div class="row parts" id="parts">
       <button class="part" data-j="0" aria-pressed="false"><div class="lbl m">Утро · 6–10</div><div class="num" id="n0">—</div><div class="dv" id="d0">&nbsp;</div></button>
       <button class="part" data-j="1" aria-pressed="false"><div class="lbl d">День · 12–16</div><div class="num" id="n1">—</div><div class="dv" id="d1">&nbsp;</div></button>
       <button class="part" data-j="2" aria-pressed="false"><div class="lbl e">Вечер · 18–22</div><div class="num" id="n2">—</div><div class="dv" id="d2">&nbsp;</div></button>
     </div>
+    <div class="when" id="date">Загрузка…</div>
   </header>
-  <div class="note" id="note" hidden>Здесь показан пример: внутри Claude страница не может запросить погоду. Настоящие данные — на tastex.github.io/termograf/three.html.</div>
+  <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf/three.html</div>
   <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день. Тяните влево и вправо, нажмите на график, чтобы раскрыть его"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор всего загруженного периода"></canvas></div>
   <div class="bar">
@@ -115,6 +116,8 @@ const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},se
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
+const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
+const DN=['день','дня','дней'], NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
 const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0;
@@ -216,8 +219,8 @@ function render(){
   const [g,W,Ht]=fit($('cv')), ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e'].forEach(k=>C[k]=css('--'+k));
   // the cursor stays in the middle; moving slowly the chart clicks from day to day, swiped fast it runs smoothly
   const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3;
-  const want=spd>3?center:Math.round(center);
-  if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(spd>3?.6:.4);
+  const want=spd>1.2?center:Math.round(center);
+  if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(spd>1.2?.7:.5);
   if(Math.abs(want-vc)>.002||spd>.05) draw(); else {vc=want; if(!drag) center=vc}
   if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
   // springy band weights
@@ -276,7 +279,7 @@ function render(){
   // the two ends: more archive on its way, the start of the archive, the end of the forecast
   const hint=(x0,x1,l1,l2,c)=>{if(x1-x0<60) return; g.save();g.textAlign='center';g.textBaseline='middle';g.fillStyle=c;
     g.font='600 13px '+FONT;g.fillText(l1,(x0+x1)/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText(l2,(x0+x1)/2,Ht/2+10);g.restore()};
-  if(xs>0) hint(0,xs,loading?'Загружаю':'Начало архива',loading?'ещё год архива':'раньше данных нет',loading?C.ink:C.muted);
+  if(xs>0) hint(0,xs,loading?'Загружаем':'Начало архива',loading?'ещё год архива':'раньше данных нет',loading?C.ink:C.muted);
   if(xe<W) hint(xe,W,'Конец прогноза','дальше данных нет',C.muted);
   readout(Math.round(vc));
   $('today').disabled=Math.round(vc)===todayI&&!drag;
@@ -285,12 +288,12 @@ function render(){
 function readout(i){
   const d=days[i]; if(!d) return; const dt=new Date(d.k), dd=Math.round((d.k-dayOf(nowMs))/DAY), ad=-dd;
   const yrs=n=>{const m10=n%10,m100=n%100;return n===1?'год назад':n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')};
-  const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${dd} дн.`:ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yrs(Math.max(1,Math.round(ad/365.25))));
+  const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yrs(Math.max(1,Math.round(ad/365.25))));
   $('date').textContent=WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+(dt.getUTCFullYear()!==new Date(nowMs).getUTCFullYear()?' '+dt.getUTCFullYear():'');
   $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'');
   PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtT(v);
     const el=$('d'+j); if(v==null||pv==null){el.textContent='\u00a0';el.className='dv';return}
-    const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'как накануне':(r>0?'+':'−')+Math.abs(r)+'° к накануне'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
+    const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'как накануне':(r>0?'+':'−')+Math.abs(r)+'° за сутки'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
 }
 
 /* ---------- overview strip ---------- */
