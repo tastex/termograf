@@ -52,9 +52,9 @@ header{position:relative}
 .delta button{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:24px;height:24px;display:grid;place-items:center;font:500 16px/1 var(--f-body);color:var(--pin);background:transparent;border:1px solid var(--pin);border-radius:50%;padding:0;cursor:pointer}
 .verdict{grid-area:l2;font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .verdict.warm{color:var(--hot)}.verdict.cool{color:var(--cold)}
-.hdr{transition:opacity .25s ease}
+.hdr{transition:opacity .18s ease}
 header.now .hdr{opacity:0;visibility:hidden}
-.trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .25s ease}
+.trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .18s ease}
 header.now .trio{opacity:1;visibility:visible}
 .tri-pair{grid-area:sub;align-self:start;display:flex;gap:18px}
 .tri-pair>div{display:flex;flex-direction:column;align-items:flex-end}
@@ -95,7 +95,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .locbtn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:999px;background:var(--paper-2);color:var(--ink);cursor:pointer;padding:0;flex:none}
 .locbtn.busy svg{animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.chartbox canvas,.ovbox canvas{transition:opacity .35s ease}
+.chartbox canvas,.ovbox canvas{transition:opacity .25s ease}
 .chartbox.loading canvas{opacity:.25}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);transform:translate(-50%,12px);opacity:0;pointer-events:none;z-index:20;
   max-width:calc(100% - 32px);background:var(--fg);color:var(--paper);font:500 16px/1.3 var(--f-body);padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);transition:opacity .25s ease,transform .25s ease}
@@ -104,6 +104,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .city .lbl{font:400 13px var(--f-body);color:var(--muted)}
 .src{font:400 13px var(--f-body);color:var(--muted)}
 .src a{color:inherit}
+.links{display:flex;align-items:baseline;justify-content:space-between;gap:6px 14px;flex-wrap:wrap}
+.x3{font:500 13px var(--f-body);color:var(--muted);text-decoration:none;white-space:nowrap}
+.x3 span:nth-child(1){color:var(--rain)}.x3 span:nth-child(2){color:var(--hot)}.x3 span:nth-child(3){color:var(--ink)}
+.x3:hover span{text-decoration:underline}
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
@@ -152,7 +156,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <ul class="sugg" id="sugg" role="listbox" hidden></ul>
       <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     </form>
-    <div class="src"><span id="tz"></span><a id="x3" href="three.html">Утро, день, вечер</a> · Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
+  </div>
+  <div class="links">
+    <div class="src"><span id="tz"></span>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
+    <a class="x3" id="x3" href="three.html"><span>Утро</span>, <span>день</span>, <span>вечер</span></a>
   </div>
 </div>
 
@@ -388,7 +395,7 @@ let drawQ=0, fade=null, vc=null, lastC=null, spd=0;
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   fade={from,e:0}; const t0=performance.now();
-  const step=now=>{const k=Math.min(1,(now-t0)/500); fade.e=1-Math.pow(1-k,3); render(); if(k<1) requestAnimationFrame(step); else fade=null};
+  const step=now=>{const k=Math.min(1,(now-t0)/350); fade.e=1-Math.pow(1-k,3); render(); if(k<1) requestAnimationFrame(step); else fade=null};
   requestAnimationFrame(step);
 }
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
@@ -401,7 +408,7 @@ function render(){
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
   if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
   if(spd>6){fzOn=false;slowMs=0}
-  if(fzOn&&fz<1){fz=Math.min(1,fz+dtF/900);draw()} else if(!fzOn&&fz>0){fz=Math.max(0,fz-dtF/650);draw()}
+  if(fzOn&&fz<1){fz=Math.min(1,fz+dtF/600);draw()} else if(!fzOn&&fz>0){fz=Math.max(0,fz-dtF/420);draw()}
   const fe=fz*fz*(3-2*fz); spanV=Math.exp(Math.log(spanH)+(Math.log(Math.min(spanH,12))-Math.log(spanH))*fe);
   const pph=W/spanV, fine=pph>=8&&!!D.q;
   // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
@@ -651,9 +658,9 @@ function release(){ // reveal next week if pulled far enough; the pull springs b
   if(pull>=W*0.15&&D.fut<end&&!D.partial){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
   const p0=pull, t0=performance.now();
   const step=now=>{const ms=now-t0;
-    const kp=reduce?1:Math.min(1,ms/320); pull=p0*Math.pow(1-kp,3);
+    const kp=reduce?1:Math.min(1,ms/240); pull=p0*Math.pow(1-kp,3);
     let done=kp>=1;
-    if(warp){const kw=Math.min(1,ms/650); warp.e=1-Math.pow(1-kw,4); if(kw>=1) warp=null; else done=false}
+    if(warp){const kw=Math.min(1,ms/460), q=kw-1; warp.e=1+2.3*q*q*q+1.3*q*q; if(kw>=1) warp=null; else done=false}
     draw(); if(!done) raf=requestAnimationFrame(step)};
   raf=requestAnimationFrame(step);
 }

@@ -39,31 +39,38 @@ html{box-sizing:border-box}
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
-header{display:grid;grid-template-rows:22px 18px 44px 18px;row-gap:2px}
+header{display:grid;grid-template-rows:22px auto;row-gap:2px}
 .when{display:flex;justify-content:space-between;gap:12px;font:500 16px/22px var(--f-body);white-space:nowrap;font-variant-numeric:tabular-nums}
 .when span:last-child{color:var(--ink);overflow:hidden;text-overflow:ellipsis}
 .cols{display:contents}
 .row{display:grid;grid-template-columns:repeat(3,1fr);column-gap:12px;min-width:0}
+.part{all:unset;display:grid;grid-template-rows:18px 44px 18px;min-width:0;cursor:pointer;transition:opacity .18s ease}
+.part>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.parts.focus .part:not(.on){opacity:.35}
+.part:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:6px}
 .row>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lbl{font:500 13px/18px var(--f-body)}
 .lbl.m{color:var(--c-m)}.lbl.d{color:var(--c-d)}.lbl.e{color:var(--c-e)}
 .num{font:700 40px/44px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .dv{font:400 13px/18px var(--f-body);color:var(--muted)}
 .dv.warm{color:var(--hot)}.dv.cool{color:var(--cold)}
-.chartbox{flex:1;min-height:260px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:grab;user-select:none}
+.chartbox{flex:1;min-height:240px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:grab;user-select:none}
 .chartbox:active{cursor:grabbing}
 canvas{display:block;width:100%;height:100%}
+.ovbox{height:48px;position:relative;touch-action:none;cursor:pointer}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
-.seg button{display:flex;align-items:center;font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:0 10px;cursor:pointer}
+.seg button{display:flex;align-items:center;font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:0 9px;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--paper);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .ibtn{box-sizing:border-box;flex:none;width:36px;height:36px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer;padding:0}
 .ibtn:disabled{opacity:.35;cursor:default}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .foot{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;font:400 13px var(--f-body);color:var(--muted)}
 .foot b{font:500 16px var(--f-body);color:var(--fg)}
-.foot a{color:var(--ink)}
+.foot a{color:inherit}
+.foot a.back{color:var(--ink)}
 .note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
+@media (prefers-reduced-motion:reduce){.part{transition:none}}
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
@@ -75,19 +82,22 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 <div class="app">
   <header>
     <div class="when"><span id="date">Загрузка…</span><span id="rel"></span></div>
-    <div class="row"><div class="lbl m">Утро · 6–10</div><div class="lbl d">День · 12–16</div><div class="lbl e">Вечер · 18–22</div></div>
-    <div class="row"><div class="num" id="nm">—</div><div class="num" id="nd">—</div><div class="num" id="ne">—</div></div>
-    <div class="row"><div class="dv" id="dm">&nbsp;</div><div class="dv" id="dd">&nbsp;</div><div class="dv" id="de">&nbsp;</div></div>
+    <div class="row parts" id="parts">
+      <button class="part" data-j="0" aria-pressed="false"><div class="lbl m">Утро · 6–10</div><div class="num" id="n0">—</div><div class="dv" id="d0">&nbsp;</div></button>
+      <button class="part" data-j="1" aria-pressed="false"><div class="lbl d">День · 12–16</div><div class="num" id="n1">—</div><div class="dv" id="d1">&nbsp;</div></button>
+      <button class="part" data-j="2" aria-pressed="false"><div class="lbl e">Вечер · 18–22</div><div class="num" id="n2">—</div><div class="dv" id="d2">&nbsp;</div></button>
+    </div>
   </header>
   <div class="note" id="note" hidden>Здесь показан пример: внутри Claude страница не может запросить погоду. Настоящие данные — на tastex.github.io/termograf/three.html.</div>
-  <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день; тяните влево и вправо"></canvas></div>
+  <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день. Тяните влево и вправо, нажмите на график, чтобы раскрыть его"></canvas></div>
+  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор всего загруженного периода"></canvas></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Масштаб">
-      <button data-d="14">2 недели</button><button data-d="31">Месяц</button><button data-d="92">3 месяца</button>
+      <button data-d="14">2 недели</button><button data-d="31">Месяц</button><button data-d="92">3 месяца</button><button data-d="365">Год</button>
     </div>
     <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
-  <div class="foot"><span><b id="city">—</b> · эксперимент</span><a id="back" href="./">Обычный график</a></div>
+  <div class="foot"><span><b id="city">—</b> · данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></span><a class="back" id="back" href="./">Обычный график</a></div>
 </div>
 
 <script>
@@ -95,29 +105,37 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 const H=3600e3, DAY=24*H, $=id=>document.getElementById(id);
 const WD=['вс','пн','вт','ср','чт','пт','сб'], MON=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
 const FONT='"Golos Text",system-ui,sans-serif';
-const PARTS=[{k:'m',a:6,b:10,name:'Утро'},{k:'d',a:12,b:16,name:'День'},{k:'e',a:18,b:22,name:'Вечер'}];
+const PARTS=[{k:'m',a:6,b:10},{k:'d',a:12,b:16},{k:'e',a:18,b:22}];
+const HIST=Math.round(10*365.25)*DAY; // ten years of archive, loaded a year at a time
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
+const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let days=[], todayI=0, nowMs=0, center=0, vc=0, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0;
+let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0;
+let center=0, vc=0, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
+let focus=null, wNow=[1,1,1], wFrom=[1,1,1], wTo=[1,1,1], wT0=0;   // band weights; a tapped chart takes the whole height
 try{span=+store.get('x3span')||14}catch(e){}
 
 /* ---------- data: one value per day for each part of the day ---------- */
-function build(t,temp,now){
+function daysFrom(t,temp,now){
   const map=new Map();
   for(let i=0;i<t.length;i++){const v=temp[i]; if(v==null) continue; const d=dayOf(t[i]), h=new Date(t[i]).getUTCHours();
     let r=map.get(d); if(!r){r={k:d,s:[0,0,0],n:[0,0,0],last:[0,0,0]};map.set(d,r)}
     PARTS.forEach((p,j)=>{if(h>=p.a&&h<=p.b){r.s[j]+=v;r.n[j]++;r.last[j]=Math.max(r.last[j],t[i])}})}
-  days=[...map.values()].sort((a,b)=>a.k-b.k).map(r=>({k:r.k,v:r.n.map((n,j)=>n>=3?r.s[j]/n:null),fc:r.last.map(x=>x>now)}));
-  nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now)));
+  return [...map.values()].sort((a,b)=>a.k-b.k).map(r=>({k:r.k,v:r.n.map((n,j)=>n>=3?r.s[j]/n:null)}));
 }
-function sample(){
-  const now=Date.now()+3*H, t=[], temp=[], a=dayOf(now)-92*DAY, b=dayOf(now)+16*DAY;
+function setDays(list,now){ // keep the day under the cursor when the data is replaced
+  const keep=days.length?days[Math.round(vc)]?.k:null;
+  days=list; nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now))); limit=dayOf(now)-HIST; ovKey='';
+  if(keep!=null){const i=days.findIndex(d=>d.k===keep); center=vc=i<0?todayI:i} else center=vc=todayI;
+  ys=null; draw();
+}
+function fakeHours(a,b){const t=[],temp=[];
   for(let x=a;x<b;x+=H){const k=x/H, doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, hr=new Date(x).getUTCHours();
-    t.push(x); temp.push(6+13*Math.cos((doy-200)/365*2*Math.PI)+3*Math.sin(k/41)+2*Math.sin(k/97+1)+4.5*Math.cos((hr-15)/24*2*Math.PI))}
-  build(t,temp,now);
+    t.push(x); temp.push(6+13*Math.cos((doy-200)/365*2*Math.PI)+3*Math.sin(k/41)+2*Math.sin(k/97+1)+1.5*Math.sin(k/13)+4.5*Math.cos((hr-15)/24*2*Math.PI))}
+  return [t,temp];
 }
 async function place(){
   const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon'));
@@ -125,115 +143,209 @@ async function place(){
   try{const w=JSON.parse(store.get('place')||'null'); if(w) return w}catch(e){}
   return {name:'Москва',lat:55.756,lon:37.617};
 }
+const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
 async function load(){
-  const w=await place(); $('city').textContent=w.name;
+  const w=W0=await place(); $('city').textContent=w.name;
   $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon;
-  const key='x3:'+w.lat+','+w.lon, P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
-  const use=j=>{build(j.hourly.time.map(P),j.hourly.temperature_2m,Date.now()+j.utc_offset_seconds*1000)};
+  const key='x3:'+w.lat+','+w.lon, use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),j.hourly.temperature_2m,now),now)};
   let shown=false;
-  try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true;goToday(true)}}catch(e){}
+  try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}}catch(e){}
   try{
     const j=await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=temperature_2m&past_days=92&forecast_days=16&timezone=auto`)).json();
-    if(!j.hourly) throw 0; store.set(key,JSON.stringify({at:Date.now(),j})); const keep=shown?days[Math.round(vc)]?.k:null; use(j);
-    if(keep!=null){const i=days.findIndex(d=>d.k===keep); center=vc=i<0?todayI:i; draw()} else goToday(true);
-  }catch(e){ if(!shown){sample(); $('note').hidden=false; goToday(true)} }
+    if(!j.hourly) throw 0; store.set(key,JSON.stringify({at:Date.now(),j})); use(j);
+  }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,temp]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,temp,now),now); $('note').hidden=false } }
+}
+const iso=ms=>new Date(ms).toISOString().slice(0,10);
+async function extendBack(){ // a year of archive when the view gets near the oldest day
+  if(loading||!days.length||days[0].k<=limit) return;
+  loading=true; ovKey=''; draw();
+  const end=days[0].k, start=Math.max(limit,end-366*DAY);
+  try{
+    let list;
+    if(sample){await new Promise(r=>setTimeout(r,300)); const [t,temp]=fakeHours(start,end); list=daysFrom(t,temp,nowMs)}
+    else{const j=await (await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m&timezone=auto`)).json();
+      list=daysFrom(j.hourly.time.map(P),j.hourly.temperature_2m,nowMs)}
+    list=list.filter(d=>d.k<end); if(!list.length) throw 0;
+    const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n;
+    if(!reduce()){fade={i:n,e:0}; const t0=performance.now(); const st=now=>{const k=Math.min(1,(now-t0)/320); fade.e=1-Math.pow(1-k,3); draw(); if(k<1) requestAnimationFrame(st); else fade=null}; requestAnimationFrame(st)}
+  }catch(e){ limit=days[0].k } // archive unreachable: stop asking
+  loading=false; ovKey=''; draw();
 }
 
 /* ---------- view ---------- */
 const clampC=c=>Math.max(0,Math.min(days.length-1,c));
-function goToday(now){center=todayI; if(now) vc=center; ys=null; draw()}
+function goToday(){center=todayI; draw()}
 function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
-function scaleFor(j){ // each chart scales to what is around the view, so day-to-day changes fill its height
+function scaleFor(j){ // each chart scales to the days around the view, so day-to-day changes fill its height
   let lo=1e9,hi=-1e9; const a=Math.max(0,Math.floor(vc-span)), b=Math.min(days.length-1,Math.ceil(vc+span));
   for(let i=a;i<=b;i++){const v=days[i].v[j]; if(v==null) continue; if(v<lo)lo=v; if(v>hi)hi=v}
   if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
   return [mn,mx];
 }
+// a smooth line that passes exactly through every day's point (monotone cubic, so it never bulges past the data)
+function tangents(j,i0,i1){const m={};
+  for(let i=i0;i<=i1;i++){const v=days[i]?.v[j]; if(v==null) continue; const a=days[i-1]?.v[j], b=days[i+1]?.v[j];
+    const d0=a==null?null:v-a, d1=b==null?null:b-v;
+    m[i]=d0==null?(d1??0):d1==null?d0:(d0*d1<=0?0:(d0+d1)/2)}
+  for(let i=i0;i<i1;i++){const v=days[i]?.v[j], b=days[i+1]?.v[j]; if(v==null||b==null) continue; const d=b-v;
+    if(d===0){m[i]=0;m[i+1]=0;continue} const al=m[i]/d, be=m[i+1]/d, s=al*al+be*be; if(s>9){const t=3/Math.sqrt(s); m[i]=t*al*d; m[i+1]=t*be*d}}
+  return m;
+}
+function valueAt(j,t,m){ // the drawn line's value at a fractional day
+  const i=Math.floor(t), u=t-i, a=days[i]?.v[j], b=days[i+1]?.v[j];
+  if(a==null) return b??null; if(b==null||u===0) return a;
+  const h00=2*u*u*u-3*u*u+1, h10=u*u*u-2*u*u+u, h01=-2*u*u*u+3*u*u, h11=u*u*u-u*u;
+  return h00*a+h10*(m[i]??0)+h01*b+h11*(m[i+1]??0);
+}
+const backOut=k=>{const c1=1.3,c3=c1+1,q=k-1;return 1+c3*q*q*q+c1*q*q};
+function setFocus(j){
+  focus=focus===j||j==null?null:j;
+  wFrom=wNow.slice(); wTo=[0,1,2].map(i=>focus==null||focus===i?1:0); wT0=performance.now();
+  document.querySelectorAll('.part').forEach(b=>{const on=focus===+b.dataset.j; b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on))});
+  $('parts').classList.toggle('focus',focus!=null); ys=null; draw();
+}
 function draw(){ if(!days.length||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
+let geom=null;
 function render(){
   const [g,W,Ht]=fit($('cv')), ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e'].forEach(k=>C[k]=css('--'+k));
-  // the view follows the finger; at rest it settles on a whole day
-  const want=drag?center:Math.round(center);
-  vc+=(want-vc)*(drag?1:.3); if(Math.abs(want-vc)>.002) draw(); else vc=want;
-  const X=i=>W/2+(i-vc)*ppd, top=26, gap=10, bandH=(Ht-top-gap*2-4)/3;
-  // smooth per-chart scales
+  // the cursor stays in the middle; moving slowly the chart clicks from day to day, swiped fast it runs smoothly
+  const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3;
+  const want=spd>3?center:Math.round(center);
+  if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(spd>3?.6:.4);
+  if(Math.abs(want-vc)>.002||spd>.05) draw(); else {vc=want; if(!drag) center=vc}
+  if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
+  // springy band weights
+  if(wT0){const k=reduce()?1:Math.min(1,(performance.now()-wT0)/360), e=backOut(k); wNow=wFrom.map((f,i)=>f+(wTo[i]-f)*e); if(k<1) draw(); else {wNow=wTo.slice(); wT0=0}}
+  const viewC=vc+pull/ppd, X=i=>W/2+(i-viewC)*ppd, top=24;
+  geom={W,Ht,top};
   const tgt=PARTS.map((_,j)=>scaleFor(j)); if(!ys) ys=tgt.map(s=>s.slice());
-  let moving=false; ys.forEach((s,j)=>{for(const q of [0,1]){const d=tgt[j][q]-s[q]; if(Math.abs(d)>.02){s[q]+=d*.2;moving=true} else s[q]=tgt[j][q]}}); if(moving) draw();
+  let moving=false; ys.forEach((s,j)=>{for(const q of [0,1]){const d=tgt[j][q]-s[q]; if(Math.abs(d)>.02){s[q]+=d*.25;moving=true} else s[q]=tgt[j][q]}}); if(moving) draw();
   g.clearRect(0,0,W,Ht);
-  const i0=Math.max(0,Math.floor(vc-span/2)-1), i1=Math.min(days.length-1,Math.ceil(vc+span/2)+1);
-  // future, today, week and month lines, date labels
-  const xt=X(todayI)+ppd/2; if(xt<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xt),0,W-Math.max(0,xt),Ht)}
-  g.font='400 11px '+FONT; g.textBaseline='alphabetic';
-  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), x=Math.round(X(i))+.5, first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1;
-    if(mon||first){g.strokeStyle=first?C['grid-strong']:C.grid;g.beginPath();g.moveTo(x,top-6);g.lineTo(x,Ht);g.stroke()}
-    const label=ppd>=18?String(dt.getUTCDate()):ppd>=8?(mon?String(dt.getUTCDate()):''):(first?'':'');
-    if(first){g.fillStyle=C.fg;g.font='600 11px '+FONT;g.fillText(MON[dt.getUTCMonth()],x+3,13);g.font='400 11px '+FONT}
-    else if(label){g.fillStyle=i===todayI?C.ink:C.muted;const w=g.measureText(label).width;g.fillText(label,X(i)-w/2,13)}}
-  // three bands
+  const i0=Math.max(0,Math.floor(viewC-span/2)-2), i1=Math.min(days.length-1,Math.ceil(viewC+span/2)+2);
+  const xs=X(0)-ppd/2, xe=X(days.length-1)+ppd/2;
+  // future, week and month lines, date labels
+  const xt=X(todayI)+ppd/2; if(xt<xe){g.fillStyle=C.future;g.fillRect(Math.max(0,xt),0,Math.min(W,xe)-Math.max(0,xt),Ht)}
+  g.textBaseline='alphabetic';
+  const yearView=ppd<3;
+  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), x=Math.round(X(i))+.5, first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1, jan=first&&dt.getUTCMonth()===0;
+    if((yearView?first:(mon||first))){g.strokeStyle=first?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(x,top-6);g.lineTo(x,Ht);g.stroke()}
+    let label=''; if(first) label=jan&&yearView?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; else if(ppd>=18||(ppd>=6&&mon)) label=String(dt.getUTCDate());
+    if(!label) continue;
+    g.font=(first?'600 ':'400 ')+'11px '+FONT; g.fillStyle=first?C.fg:i===todayI?C.ink:C.muted;
+    const w=g.measureText(label).width; g.fillText(label,first?x+3:X(i)-w/2,14)}
+  // bands
+  const sumW=wNow.reduce((a,b)=>a+Math.max(0,b),0)||1, avail=Ht-top-2; let y0=top;
   PARTS.forEach((p,j)=>{
-    const y0=top+j*(bandH+gap), [mn,mx]=ys[j], Y=v=>y0+8+(mx-v)/(mx-mn||1)*(bandH-16), col=C['c-'+p.k];
-    g.strokeStyle=C.grid;g.lineWidth=1;
-    const step=(mx-mn)>16?5:2;
+    const bh=Math.max(0,wNow[j])/sumW*avail; const yb=y0; y0+=bh; if(bh<14) return;
+    const [mn,mx]=ys[j], pad=Math.min(10,bh*.12), Y=v=>yb+pad+(mx-v)/(mx-mn||1)*(bh-2*pad), col=C['c-'+p.k];
+    g.save(); g.beginPath(); g.rect(0,yb,W,bh); g.clip();
+    const step=(mx-mn)>16?5:2; g.lineWidth=1; g.strokeStyle=C.grid;
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Math.round(Y(v))+.5; if(y<yb+4||y>yb+bh-4) continue; g.beginPath();g.moveTo(Math.max(0,xs),y);g.lineTo(Math.min(W,xe),y);g.stroke()}
+    // line through each day's value; forecast lighter
+    const m=tangents(j,i0-1,i1+1), segs=[]; let cur=null;
+    for(let i=i0;i<=i1;i++){const v=days[i].v[j]; if(v==null){cur=null;continue} if(!cur){cur=[];segs.push(cur)} cur.push(i)}
+    const path=s=>{g.beginPath();g.moveTo(X(s[0]),Y(days[s[0]].v[j]));for(let k=0;k<s.length-1;k++){const a=s[k],b=s[k+1],va=days[a].v[j],vb=days[b].v[j];
+      g.bezierCurveTo(X(a)+ppd/3,Y(va+(m[a]??0)/3),X(b)-ppd/3,Y(vb-(m[b]??0)/3),X(b),Y(vb))}};
+    g.lineWidth=2.2;g.lineJoin='round';g.strokeStyle=col;
+    segs.forEach(s=>{ if(s.length<2) return;
+      g.save();g.beginPath();g.rect(0,yb,Math.max(0,xt),bh);g.clip();path(s);g.stroke();g.restore();
+      if(xt<W){g.save();g.beginPath();g.rect(Math.max(0,xt),yb,W,bh);g.clip();g.globalAlpha=.45;path(s);g.stroke();g.restore()}});
+    if(ppd>=12) for(let i=i0;i<=i1;i++){const v=days[i].v[j]; if(v==null) continue; g.beginPath();g.arc(X(i),Y(v),2.6,0,7);
+      if(i>todayI){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.strokeStyle=col;g.stroke()} else {g.fillStyle=col;g.fill()}}
+    // labels: scale on the left, the chart's name on the right
     g.font='400 11px '+FONT;g.textBaseline='middle';
-    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Math.round(Y(v))+.5;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
-    g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(0,y0+bandH+gap/2+.5);g.lineTo(W,y0+bandH+gap/2+.5);g.stroke();
-    // line through one point per day; forecast drawn lighter
-    const pts=[];for(let i=i0;i<=i1;i++){const v=days[i].v[j]; if(v!=null) pts.push([X(i),Y(v),i])}
-    if(pts.length>1){
-      const path=()=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx2=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx2,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
-      g.lineWidth=2.2;g.lineJoin='round';g.strokeStyle=col;
-      g.save();g.beginPath();g.rect(0,0,Math.max(0,xt),Ht);g.clip();path();g.stroke();g.restore();
-      if(xt<W){g.save();g.beginPath();g.rect(Math.max(0,xt),0,W,Ht);g.clip();g.globalAlpha=.45;path();g.stroke();g.restore()}
-      if(ppd>=12) pts.forEach(([x,y,i])=>{g.beginPath();g.arc(x,y,2.6,0,7);g.fillStyle=i>todayI?C.paper:col;g.fill();if(i>todayI){g.lineWidth=1.5;g.strokeStyle=col;g.stroke()}})}
-    // scale labels on top
-    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v), t=fmtT(v), w=g.measureText(t).width;g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(0,y-7,w+6,14);g.globalAlpha=1;g.fillStyle=C.muted;g.fillText(t,2,y)}
-    // cursor dot
-    const ci=Math.round(vc), v=days[ci]?.v[j];
-    if(v!=null){const cx=W/2, cy=Y(curve(j,vc)); g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=col;g.stroke()}
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v); if(y<yb+8||y>yb+bh-6) continue; const t=fmtT(v), w=g.measureText(t).width;const lx=Math.max(0,xs);g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(lx,y-7,w+6,14);g.globalAlpha=1;g.fillStyle=C.muted;g.fillText(t,lx+2,y)}
+    g.font='600 11px '+FONT; const nm=['Утро','День','Вечер'][j], nw=g.measureText(nm).width;
+    g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(W-nw-8,yb+3,nw+8,15);g.globalAlpha=1;g.fillStyle=col;g.fillText(nm,W-nw-4,yb+11);
+    // cursor dot on the line
+    const cv=valueAt(j,vc,tangents(j,Math.floor(vc)-1,Math.floor(vc)+2));
+    if(cv!=null){g.beginPath();g.arc(W/2,Y(cv),5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=col;g.stroke()}
+    g.restore();
+    if(y0<Ht-4){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(0,Math.round(y0)+.5);g.lineTo(W,Math.round(y0)+.5);g.stroke()}
   });
-  // cursor line
-  const cx=(Math.floor(W/2*(devicePixelRatio||1))+.5)/(devicePixelRatio||1);
+  // cursor line, behind the dots
+  const dpr=devicePixelRatio||1, cx=(Math.floor(W/2*dpr)+.5)/dpr;
   g.globalCompositeOperation='destination-over';g.strokeStyle=C.fg;g.globalAlpha=.35;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-6);g.lineTo(cx,Ht);g.stroke();g.globalAlpha=1;g.globalCompositeOperation='source-over';
+  if(fade){const xr=Math.min(W,X(fade.i)-ppd/2); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
+  // the two ends: more archive on its way, the start of the archive, the end of the forecast
+  const hint=(x0,x1,l1,l2,c)=>{if(x1-x0<60) return; g.save();g.textAlign='center';g.textBaseline='middle';g.fillStyle=c;
+    g.font='600 13px '+FONT;g.fillText(l1,(x0+x1)/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText(l2,(x0+x1)/2,Ht/2+10);g.restore()};
+  if(xs>0) hint(0,xs,loading?'Загружаю':'Начало архива',loading?'ещё год архива':'раньше данных нет',loading?C.ink:C.muted);
+  if(xe<W) hint(xe,W,'Конец прогноза','дальше данных нет',C.muted);
   readout(Math.round(vc));
   $('today').disabled=Math.round(vc)===todayI&&!drag;
-}
-function curve(j,t){ // value of the smoothed line at fractional day t, matching how it is drawn
-  const k=Math.round(t), u=Math.max(0,Math.min(1,t-k+.5)), val=i=>days[i]?.v[j]??null, v=val(k);
-  if(v==null) return 0; const a=val(k-1), b=val(k+1), m0=a==null?v:(a+v)/2, m1=b==null?v:(v+b)/2;
-  return (1-u)*(1-u)*m0+2*u*(1-u)*v+u*u*m1;
+  drawOv(C);
 }
 function readout(i){
-  const d=days[i]; if(!d) return; const dt=new Date(d.k), dd=Math.round((d.k-dayOf(nowMs))/DAY);
-  const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${dd} дн.`:`${-dd} дн. назад`);
+  const d=days[i]; if(!d) return; const dt=new Date(d.k), dd=Math.round((d.k-dayOf(nowMs))/DAY), ad=-dd;
+  const yrs=n=>{const m10=n%10,m100=n%100;return n===1?'год назад':n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')};
+  const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${dd} дн.`:ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yrs(Math.max(1,Math.round(ad/365.25))));
   $('date').textContent=WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+(dt.getUTCFullYear()!==new Date(nowMs).getUTCFullYear()?' '+dt.getUTCFullYear():'');
   $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'');
-  PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+p.k).textContent=fmtT(v);
-    const el=$('d'+p.k); if(v==null||pv==null){el.textContent=' ';el.className='dv';return}
+  PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtT(v);
+    const el=$('d'+j); if(v==null||pv==null){el.textContent='\u00a0';el.className='dv';return}
     const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'как накануне':(r>0?'+':'−')+Math.abs(r)+'° к накануне'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
 }
 
+/* ---------- overview strip ---------- */
+let ovKey='', ovBg=null;
+function drawOv(C){
+  const [g,W,Ht]=fit($('ov')), n=days.length, X=i=>(i+.5)/n*W, dpr=devicePixelRatio||1;
+  const key=[n,days[0].k,W,Ht,dpr,C.ink,loading].join('|');
+  if(key!==ovKey){ovKey=key; ovBg=ovBg||document.createElement('canvas'); ovBg.width=Math.round(W*dpr); ovBg.height=Math.round(Ht*dpr);
+    const o=ovBg.getContext('2d'); o.setTransform(dpr,0,0,dpr,0,0); o.clearRect(0,0,W,Ht);
+    let lo=1e9,hi=-1e9; days.forEach(d=>d.v.forEach(v=>{if(v!=null){if(v<lo)lo=v;if(v>hi)hi=v}})); const Y=v=>3+(hi-v)/(hi-lo||1)*(Ht-16);
+    const yr0=new Date(days[0].k).getUTCFullYear()-1, yr1=new Date(days[n-1].k).getUTCFullYear(), Xt=ms=>X((ms-days[0].k)/DAY);
+    for(let y=yr0;y<=yr1;y++){o.globalAlpha=.10;o.fillStyle=css('--cold');o.fillRect(Xt(Date.UTC(y,11,1)),0,Xt(Date.UTC(y+1,2,1))-Xt(Date.UTC(y,11,1)),Ht-12);o.fillStyle=css('--hot');o.fillRect(Xt(Date.UTC(y,5,1)),0,Xt(Date.UTC(y,8,1))-Xt(Date.UTC(y,5,1)),Ht-12)}
+    o.globalAlpha=.6;o.fillStyle=C.ink;
+    days.forEach((d,i)=>{const vs=d.v.filter(v=>v!=null); if(!vs.length) return; const a=Math.max(...vs), b=Math.min(...vs); o.fillRect(X(i)-W/n/2,Y(a),Math.max(.6,W/n),Math.max(1,Y(b)-Y(a)))});
+    o.globalAlpha=1;o.font='500 11px '+FONT;o.textBaseline='alphabetic';o.fillStyle=C.muted; const long=n>700; let last=-1;
+    days.forEach((d,i)=>{const dt=new Date(d.k); if(dt.getUTCDate()!==1) return; const jan=dt.getUTCMonth()===0, x=X(i);
+      if(jan||!long){o.fillRect(x,0,1,Ht); const t=jan?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; if(x+3>=last){o.fillText(t,x+3,Ht-1);last=x+3+o.measureText(t).width+3}} else o.fillRect(x,Ht-12,1,3)});
+    if(loading){o.fillStyle=C.ink;o.fillText('загрузка…',3,10)}}
+  g.clearRect(0,0,W,Ht); g.drawImage(ovBg,0,0,W,Ht);
+  const x0=Math.max(0,X(vc-span/2)), x1=Math.min(W,X(vc+span/2));
+  g.fillStyle=C.fg;g.globalAlpha=.08;g.fillRect(x0,0,x1-x0,Ht);g.globalAlpha=1;g.strokeStyle=C.fg;g.lineWidth=1.5;g.strokeRect(x0+.75,.75,Math.max(2,x1-x0-1.5),Ht-1.5);
+  g.fillStyle=C.fg;g.fillRect(X(todayI)-.5,0,1,Ht);
+}
+
 /* ---------- interaction ---------- */
-const box=$('box');
-box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null};vel=0});
+const box=$('box'), rub=r=>{const W=box.clientWidth;return W*.3*(1-Math.exp(-r/(W*.6)))};
+box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center};vel=0});
 window.addEventListener('pointermove',e=>{if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
   const dx=e.clientX-drag.last, now=performance.now(), ppd=box.clientWidth/span;
-  center=clampC(center-dx/ppd); vel=dx/Math.max(8,now-drag.t)/ppd; drag.last=e.clientX; drag.t=now; draw()});
-window.addEventListener('pointerup',()=>{if(!drag)return;const was=drag.lock==='x';drag=null;
-  if(was&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const step=()=>{vel*=.93;if(Math.abs(vel)<.0004){draw();return}center=clampC(center-vel*16);draw();raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)} else draw()});
-window.addEventListener('pointercancel',()=>{drag=null;draw()});
-box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center=clampC(center+d/(box.clientWidth/span));clearTimeout(box._w);drag={lock:'x'};box._w=setTimeout(()=>{drag=null;draw()},120);draw()},{passive:false});
+  drag.v-=dx/ppd; center=clampC(drag.v);
+  const over=drag.v-(days.length-1), under=-drag.v; pull=over>0?rub(over*ppd):under>0?-rub(under*ppd):0; // rubber band at both ends
+  vel=dx/Math.max(8,now-drag.t)/ppd; drag.last=e.clientX; drag.t=now; draw()});
+function springBack(){const p0=pull,t0=performance.now();const st=now=>{const k=reduce()?1:Math.min(1,(now-t0)/260);pull=p0*Math.pow(1-k,3);draw();if(k<1)raf=requestAnimationFrame(st)};raf=requestAnimationFrame(st)}
+window.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
+  if(d.lock===null){ // a tap on a chart opens it to the full height; another tap brings the three back
+    const r=box.getBoundingClientRect(), y=d.y-r.top, gm=geom; if(!gm||y<gm.top) return;
+    const sumW=wNow.reduce((a,b)=>a+Math.max(0,b),0)||1; let acc=gm.top;
+    for(let j=0;j<3;j++){acc+=Math.max(0,wNow[j])/sumW*(gm.Ht-gm.top-2); if(y<acc){setFocus(focus==null?j:null);return}} return}
+  if(d.lock!=='x') return;
+  if(pull!==0){if(pull<0) extendBack(); springBack(); return}
+  if(!reduce()){const step=()=>{vel*=.93;if(Math.abs(vel)<.0004){draw();return}const c=clampC(center-vel*16);if(c===center){draw();return}center=c;draw();raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)} else draw()});
+window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull) springBack();draw()}});
+box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center=clampC(center+d/(box.clientWidth/span));draw()},{passive:false});
 box.tabIndex=0;
 box.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center=clampC(Math.round(center)+(e.key==='ArrowLeft'?-1:1));draw();e.preventDefault()}});
-function setSpan(d){span=d;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.d===d)));ys=null;draw()}
+document.querySelectorAll('.part').forEach(b=>b.addEventListener('click',()=>setFocus(+b.dataset.j)));
+const ov=$('ovbox'); let ovDrag=false;
+const ovSet=e=>{const r=ov.getBoundingClientRect();center=clampC(Math.round((e.clientX-r.left)/r.width*days.length-.5));draw()};
+ov.addEventListener('pointerdown',e=>{if(!days.length)return;ovDrag=true;ov.setPointerCapture?.(e.pointerId);ovSet(e)});
+ov.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
+ov.addEventListener('pointerup',()=>ovDrag=false);
+function setSpan(d){span=d;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.d===d)));ys=null;spd=0;lastC=null;draw()}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
-$('today').addEventListener('click',()=>goToday(false));
-addEventListener('resize',draw);
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
-setSpan([14,31,92].includes(span)?span:14);
+$('today').addEventListener('click',goToday);
+addEventListener('resize',()=>{ovKey='';draw()});
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKey='';draw()});
+setSpan([14,31,92,365].includes(span)?span:14);
 load();
 })();
 </script>
