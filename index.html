@@ -51,19 +51,18 @@ header{position:relative;min-height:118px;display:grid;grid-template-columns:aut
 .when{font:500 14px var(--f-data);font-variant-numeric:tabular-nums}
 .hdr{transition:opacity .25s ease}
 header.now .hdr{opacity:0;visibility:hidden}
-/* at rest on the current hour: yesterday · now · tomorrow at this time */
-.trio{position:absolute;inset:0;display:grid;grid-template-rows:18px 1fr auto;row-gap:2px;opacity:0;visibility:hidden;transition:opacity .25s ease;background:var(--paper)}
+/* today: the same layout as the usual reading, with yesterday and tomorrow at this time on the right */
+.trio{position:absolute;inset:0;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"temp meta" "say say";column-gap:12px;row-gap:6px;align-items:end;align-content:start;
+  opacity:0;visibility:hidden;transition:opacity .25s ease;background:var(--paper)}
 header.now .trio{opacity:1;visibility:visible}
-.tri-top{font:500 13px/18px var(--f-body);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tri-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:end;column-gap:12px}
-.tri-side{display:flex;flex-direction:column;gap:1px;min-width:0}
-.tri-side.r{text-align:right;align-items:flex-end}
-.tri-side small{font:500 12px var(--f-body);color:var(--muted)}
-.tri-side b{font:700 26px/1.05 var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
-.tri-side i{font:500 12px var(--f-data);font-style:normal;color:var(--muted)}
-.tri-side i.warm{color:var(--hot)}.tri-side i.cool{color:var(--cold)}
-.tri-now{font:700 clamp(46px,13vw,64px)/1 var(--f-display);letter-spacing:-.03em;color:var(--fg);font-variant-numeric:tabular-nums;text-align:center}
-.tri-say{font:500 13px/1.35 var(--f-body);color:var(--muted);white-space:pre-line}
+.trio .temp{grid-area:temp}
+.tri-meta{grid-area:meta;display:grid;grid-template-rows:repeat(4,18px);row-gap:1px;justify-items:end;text-align:right;min-width:0;padding-bottom:4px}
+.tri-meta>div{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px}
+.tri-rel{display:flex;align-items:baseline;gap:6px;font:500 12px/18px var(--f-body);color:var(--muted)}
+.tri-rel b{font:600 15px/18px var(--f-data);color:var(--fg);font-variant-numeric:tabular-nums}
+.tri-rel i{font:500 12px var(--f-data);font-style:normal;color:var(--muted);min-width:6.5ch;text-align:right}
+.tri-rel i.warm{color:var(--hot)}.tri-rel i.cool{color:var(--cold)}
+.tri-say{grid-area:say;font:500 14px/20px var(--f-body);color:var(--muted);white-space:pre-line}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 .tag{font:500 13px var(--f-body);color:var(--ink)}
 .cond{font:400 12px/18px var(--f-data);color:var(--muted);font-variant-numeric:tabular-nums}
@@ -128,11 +127,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     <div class="delta hdr" id="delta">&nbsp;</div>
     <div class="verdict hdr" id="verdict">&nbsp;</div>
     <div class="trio" id="trio" aria-live="polite">
-      <div class="tri-top" id="triTop">&nbsp;</div>
-      <div class="tri-row">
-        <div class="tri-side"><small>Вчера</small><b id="triY">—</b><i id="triYd">&nbsp;</i></div>
-        <div class="tri-now" id="triN">—</div>
-        <div class="tri-side r"><small>Завтра</small><b id="triT">—</b><i id="triTd">&nbsp;</i></div>
+      <div class="temp" id="triN">—</div>
+      <div class="tri-meta">
+        <div class="when" id="triWhen">&nbsp;</div>
+        <div class="tag" id="triTop">&nbsp;</div>
+        <div class="tri-rel">Вчера <b id="triY">—</b><i id="triYd">&nbsp;</i></div>
+        <div class="tri-rel">Завтра <b id="triT">—</b><i id="triTd">&nbsp;</i></div>
       </div>
       <div class="tri-say" id="triSay">&nbsp;</div>
     </div>
@@ -235,29 +235,50 @@ function regular(o){
 const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten years (Open-Meteo archive goes back to 1940)
 let LOC=null, busy=false, pinWant=null;
 // where: {name, lat, lon}
+// Opening is staged so it feels instant:
+// 1) the last quick answer for this place from the phone's memory (if under three hours old) is drawn right away;
+// 2) a small request — yesterday, today, tomorrow and the day after, hourly and every 15 minutes — replaces it in a moment;
+// 3) three months back and two weeks ahead arrive in the background. Scrolling into what is not there yet shows that it is loading.
+const WX='https://api.open-meteo.com/v1/forecast', VARS='temperature_2m,precipitation,weather_code';
+async function getJ(u){const j=await (await fetch(u)).json(); if(!j.hourly) throw new Error('api'); return j}
+function setData(where,j,partial){
+  const keep=D&&!D.sample&&D.where&&D.where.lat===where.lat&&D.where.lon===where.lon&&vc!=null?vc:null;
+  D=parse(j,where.lat); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
+  LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=dayOf(D.now)-HIST_DAYS*DAY;
+  D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); D.q=null;
+  const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); setQ(P(m.time[0]),m.temperature_2m.slice(),m.precipitation||[],m.weather_code||[])}
+  if(keep!=null){center=keep;clamp();draw()} else {yMin=null; goToday()}
+}
+function mergeFull(j){ // the long range arrives: same hours, more of them; the view stays where it is
+  const o=parse(j,D.where.lat), from=D.t[0];
+  ['t','temp','rain','code'].forEach(k=>D[k]=o[k]); Object.assign(D.sun,o.sun); D.partial=false;
+  rebuildDays(); clamp(); fadeOld(from); draw();
+}
 async function load(where, announce){
-  const first=!D; if(first) $('when').textContent='Загрузка…'; $('chartbox').classList.add('loading');
-  let ok=true; $('city').value=where.name;
+  const first=!D; if(first) $('when').textContent='Загрузка…';
+  $('city').value=where.name;
+  const key='wx:'+where.lat+','+where.lon; let shown=false, ok=true;
+  try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
+  if(!shown) $('chartbox').classList.add('loading');
   try{
-    const u=`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}&longitude=${where.lon}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`;
-    const j=await (await fetch(u)).json(); if(!j.hourly) throw new Error('api');
-    D=parse(j,where.lat); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where;
-    LOC={lat:where.lat,lon:where.lon}; $('city').value=where.name;
+    const j=await getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&minutely_15=${VARS}&daily=sunrise,sunset&past_days=1&forecast_days=3&past_minutely_15=192&forecast_minutely_15=192&timezone=auto`);
+    store.set(key,JSON.stringify({at:Date.now(),j})); setData(where,j,true); shown=true;
+  }catch(e){ if(!shown) ok=false }
+  if(ok){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
-  }catch(e){
-    ok=false;
+    const W0=where;
+    getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`)
+      .then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw()}});
+  } else {
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
+    rebuildDays(); D.q=null; D.limit=dayOf(D.now)-HIST_DAYS*DAY; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
+    yMin=null; goToday(); loadQ(where);
     if(window.top===window) $('note').textContent='Сервис погоды не отвечает, поэтому показан пример. Проверьте интернет и обновите страницу.';
     $('note').hidden=false;
   }
-  rebuildDays();
-  D.q=null; D.limit=dayOf(D.now)-HIST_DAYS*DAY;
-  D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); // revealed up to the end of the day after tomorrow
-  yMin=null; pin=null;
-  const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin();
-  goToday(); loadQ(where);
+  if(first||announce){pin=null; const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin()}
   // times are the city's local time; say so when it differs from the phone's
   const devOff=-new Date().getTimezoneOffset()*60000, hrs=D.off/H, sgn=hrs>=0?'+':'−', tzs='UTC'+sgn+Math.abs(hrs).toString().replace('.',',');
   $('tz').textContent=D.off!==devOff?'Время местное для города, '+tzs+' · ':'';
@@ -277,12 +298,6 @@ async function loadQ(where){
     for(let k=0;k<n;k++){const t=t0+k*Q, i=idxAt(t); temp.push(hourlyAt(t)+0.35*Math.sin(t/Q*1.3)); rain.push(D.rain[i]/4); code.push(D.code[i])}
     setQ(t0,temp,rain,code); return;
   }
-  try{
-    const u=`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}&longitude=${where.lon}&minutely_15=temperature_2m,precipitation,weather_code&start_minutely_15=${iso(d0-DAY)}T00:00&end_minutely_15=${iso(d0+DAY)}T23:45&timezone=auto`;
-    const m=(await (await fetch(u)).json()).minutely_15; if(!m||D!==DD) return;
-    const P=x=>Date.parse(x+(x.length===16?':00Z':'Z'));
-    setQ(P(m.time[0]),m.temperature_2m.slice(),m.precipitation||[],m.weather_code||[]);
-  }catch(e){} // without them the chart simply stays hourly
 }
 const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
 async function geocodeAll(name,count){
@@ -317,7 +332,7 @@ function rebuildDays(){ // one record per day, so wide views and the overview ne
 }
 const dayRange=(a,b)=>{const i=Math.max(0,Math.floor((a-D.d0)/DAY)), j=Math.min(D.days.length-1,Math.floor((b-D.d0)/DAY)); const out=[]; for(let k=i;k<=j;k++) if(D.days[k]) out.push(D.days[k]); return out};
 async function extendBack(){
-  if(busy||!D||D.t[0]<=D.limit) return;
+  if(busy||!D||D.partial||D.t[0]<=D.limit) return; // while the long range is on its way, the archive waits for it
   busy=true; render();
   const end=D.t[0], start=Math.max(D.limit,end-366*DAY);
   try{
@@ -510,19 +525,19 @@ function render(){
   if(fade){const xr=Math.min(W,X(fade.from)); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
   // left end: more history is loading, or the ten years are all there is
   const xs=X(D.t[0]);
-  if(pull<-2&&xs>0){const more=D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
+  if(pull<-2&&xs>0){const more=D.partial||D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
     const cx2=xs/2, cy2=(top+bot)/2; g.fillStyle=more?C.ink:C.muted; g.strokeStyle=g.fillStyle; g.lineWidth=2; g.lineCap='round';
     g.beginPath();g.moveTo(cx2+6,cy2-30);g.lineTo(cx2-6,cy2-22);g.lineTo(cx2+6,cy2-14);g.stroke();
-    g.font='600 12px '+MONO; const l=more?['Загружаю','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
+    g.font='600 12px '+MONO; const l=D.partial?['Загружаю','прошлые дни']:more?['Загружаю','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
     g.font='400 11px '+MONO; g.fillText(l[1],cx2,cy2+18); g.restore()}
   // pull-for-more hint past the revealed end
-  if(pull>2&&xf<W){const more=D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15;
+  if(pull>2&&xf<W){const more=D.partial||D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15&&!D.partial;
     g.save();g.globalAlpha=Math.min(1,pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
     const cx2=xf+(W-xf)/2, cy2=(top+bot)/2;
     g.strokeStyle=more?C.ink:C.muted;g.lineWidth=2;g.lineCap='round';g.beginPath();
     g.moveTo(cx2-6,cy2-30);g.lineTo(cx2+6,cy2-22);g.lineTo(cx2-6,cy2-14);g.stroke();
     g.fillStyle=more?C.ink:C.muted;g.font='600 12px '+MONO;
-    const l=more?(ready?['Отпустите','покажу неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
+    const l=D.partial?['Загружаю','прогноз']:more?(ready?['Отпустите','покажу неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   // center cursor
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
@@ -544,9 +559,10 @@ const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.
 function trio(i,isNow,tq){
   const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
   const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
-  $('triTop').textContent=(isNow?'Сейчас':'Сегодня '+at+(ms>D.now?' · прогноз':''))+' · '+dLabel(ms)+(isNow?' · '+hm(ms):'')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
+  $('triWhen').textContent=dLabel(ms)+' · '+(tq!=null?hm(ms):hh(ms));
+  $('triTop').textContent=(isNow?'Сейчас':ms>D.now?'Сегодня · прогноз':'Сегодня')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
   $('triN').textContent=fmtT(n); $('triY').textContent=fmtT(y); $('triT').textContent=fmtT(t);
-  const mark=(el,d)=>{el.textContent=Math.abs(d)<1?'так же':fmtD(d)+(isNow?' к сейчас':' к сегодня');el.className=Math.abs(d)<1?'':d>0?'warm':'cool'};
+  const mark=(el,d)=>{el.textContent=Math.abs(d)<1?'так же':fmtD(d);el.className=Math.abs(d)<1?'':d>0?'warm':'cool'};
   mark($('triYd'),y-n); mark($('triTd'),t-n);
   const deg=d=>{const a=Math.round(Math.abs(d));return a+'°'}, word=d=>d>0?'теплее':'холоднее';
   const dy=n-y, dt=t-n;
@@ -632,7 +648,7 @@ window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull!==0)rele
 function release(){ // reveal next week if pulled far enough; the pull springs back and the new week slides in
   const W=box.clientWidth, end=D.t[D.t.length-1]+H, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(pull<0) extendBack();
-  if(pull>=W*0.15&&D.fut<end){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
+  if(pull>=W*0.15&&D.fut<end&&!D.partial){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
   const p0=pull, t0=performance.now();
   const step=now=>{const ms=now-t0;
     const kp=reduce?1:Math.min(1,ms/320); pull=p0*Math.pow(1-kp,3);
