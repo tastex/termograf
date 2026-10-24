@@ -127,7 +127,7 @@ try{span=+store.get('x3span')||14}catch(e){}
 
 // Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
 // The mirror address goes into MIRROR below, or once through the link: ?mirror=https://name.account.workers.dev
-const MIRROR='';
+const MIRROR='https://termograf.tasteofthefloor.workers.dev';
 const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive','geocoding-api.open-meteo.com':'geo'};
 (()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
 const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};

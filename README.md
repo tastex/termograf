@@ -35,7 +35,7 @@
 
 1. dash.cloudflare.com → Workers & Pages → Create → Worker, назвать, например, `termograf`, Deploy.
 2. Edit code → заменить код содержимым `cloudflare/worker.js` → Deploy.
-3. Открыть один раз `https://tastex.github.io/termograf/?mirror=https://termograf.<ваш-аккаунт>.workers.dev` — адрес запомнится на этом устройстве. Либо вписать его в константу `MIRROR` в `index.html` и `three.html`, тогда он будет работать везде.
+3. Открыть один раз `https://tastex.github.io/termograf/?mirror=https://termograf.<ваш-аккаунт>.workers.dev` — адрес запомнится на этом устройстве. Либо вписать его в константу `MIRROR` в `index.html` и `three.html`, тогда он будет работать везде. Сейчас там `https://termograf.tasteofthefloor.workers.dev`.
 
 Если воркер подключён к этому репозиторию (Workers Builds), Cloudflare сам берёт настройки из `wrangler.jsonc` и пересобирает зеркало при каждом пуше в `main`. Имя в `wrangler.jsonc` должно совпадать с именем воркера.
 
