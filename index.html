@@ -174,6 +174,8 @@ const WC={0:'ясно',1:'почти ясно',2:'облачно',3:'пасму�
 const MONO='"IBM Plex Mono",ui-monospace,monospace';
 
 let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
+const Q=H/4; // quarter hour
+let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
 let warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
@@ -184,6 +186,7 @@ function dLabel(ms){const d=new Date(ms);return WD[d.getUTCDay()]+', '+d.getUTCD
 function yearsAgo(ad){const n=Math.max(1,Math.round(ad/365.25)); if(n===1) return 'год назад';
   const m10=n%10,m100=n%100; return n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')}
 const MONF=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+function hm(ms){const d=new Date(ms);return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')}
 function hh(ms){return String(new Date(ms).getUTCHours()).padStart(2,'0')+':00'}
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
 const relDay=ms=>Math.round((dayOf(ms)-dayOf(D.now))/DAY);
@@ -250,17 +253,38 @@ async function load(where, announce){
     $('note').hidden=false;
   }
   rebuildDays();
-  D.limit=dayOf(D.now)-HIST_DAYS*DAY;
+  D.q=null; D.limit=dayOf(D.now)-HIST_DAYS*DAY;
   D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); // revealed up to the end of the day after tomorrow
   yMin=null; pin=null;
   const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin();
-  goToday();
+  goToday(); loadQ(where);
   // times are the city's local time; say so when it differs from the phone's
   const devOff=-new Date().getTimezoneOffset()*60000, hrs=D.off/H, sgn=hrs>=0?'+':'−', tzs='UTC'+sgn+Math.abs(hrs).toString().replace('.',',');
   $('tz').textContent=D.off!==devOff?'Время местное для города, '+tzs+' · ':'';
   $('chartbox').classList.remove('loading');
   if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
 }
+// 15-minute readings for yesterday, today and tomorrow (native in Central Europe and North America, interpolated from hourly elsewhere)
+function hourlyAt(t){const k=(t-D.t[0])/H, i=Math.max(0,Math.min(D.t.length-2,Math.floor(k))), u=Math.max(0,Math.min(1,k-i)); return D.temp[i]+(D.temp[i+1]-D.temp[i])*u}
+function setQ(t0,temp,rain,code){
+  const n=temp.length; for(let k=0;k<n;k++) if(temp[k]==null) temp[k]=hourlyAt(t0+k*Q);
+  D.q={t0,n,end:t0+(n-1)*Q,temp,rain:rain.map(v=>v||0),code}; draw();
+}
+async function loadQ(where){
+  const DD=D, d0=dayOf(D.now);
+  if(D.sample){ // example data: hourly line with a little extra detail
+    const t0=d0-DAY, n=3*96, temp=[], rain=[], code=[];
+    for(let k=0;k<n;k++){const t=t0+k*Q, i=idxAt(t); temp.push(hourlyAt(t)+0.35*Math.sin(t/Q*1.3)); rain.push(D.rain[i]/4); code.push(D.code[i])}
+    setQ(t0,temp,rain,code); return;
+  }
+  try{
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}&longitude=${where.lon}&minutely_15=temperature_2m,precipitation,weather_code&start_minutely_15=${iso(d0-DAY)}T00:00&end_minutely_15=${iso(d0+DAY)}T23:45&timezone=auto`;
+    const m=(await (await fetch(u)).json()).minutely_15; if(!m||D!==DD) return;
+    const P=x=>Date.parse(x+(x.length===16?':00Z':'Z'));
+    setQ(P(m.time[0]),m.temperature_2m.slice(),m.precipitation||[],m.weather_code||[]);
+  }catch(e){} // without them the chart simply stays hourly
+}
+const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
 async function geocodeAll(name,count){
   const g=await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=${count}&language=ru&name=`+encodeURIComponent(name))).json();
   return (g.results||[]).map(p=>({name:p.name,lat:p.latitude,lon:p.longitude,region:[p.admin1,p.country].filter((x,i,a)=>x&&a.indexOf(x)===i&&x!==p.name).join(', ')}));
@@ -316,6 +340,7 @@ async function extendBack(){
 const maxC=()=>D.fut-H, minC=()=>D.t[0]; // the first and last loaded hours may both reach the cursor line
 function clamp(){center=Math.min(maxC(),Math.max(minC(),center))}
 function goToday(){ // cursor on the current hour
+  fzOn=false;slowMs=0;
   D.now=Date.now()+D.off; // the page may have been asleep for hours (home-screen app): use the clock, not the load time
   center=D.t[0]+Math.floor((D.now-D.t[0])/H)*H; pull=0; clamp(); draw();
 }
@@ -338,7 +363,7 @@ function curveAt(t,start,step,val,n){
 function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=bg;g.globalAlpha=.88;g.fillRect(x-2,y-8,w+4,15);g.globalAlpha=1;g.fillStyle=fg;g.fillText(txt,x,y)}
 
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
-  let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanH*H*1.5,Math.min(D.fut,center+spanH*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
+  let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanV*H*1.5,Math.min(D.fut,center+spanV*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
   if(lo>hi){lo=D.gl;hi=D.gh}
   let mn=Math.floor((lo-3)/5)*5, mx=Math.ceil((hi+2.5)/5)*5; if(mx-mn<15){mx=mn+15}
   return [mn,mx];
@@ -359,20 +384,26 @@ function fadeOld(from){ // older data that just arrived fades in instead of popp
   requestAnimationFrame(step);
 }
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
-  if(center-Math.max(spanH*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
+  if(center-Math.max(spanV*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
 function render(){
   if(!D) return;
   const [g,W,Ht]=fit(chart);
   const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin'].forEach(k=>C[k]=css('--'+k));
-  const pph=W/spanH;
+  // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. Both ease in and out
+  const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
+  if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
+  if(spd>6){fzOn=false;slowMs=0}
+  if(fzOn&&fz<1){fz=Math.min(1,fz+dtF/900);draw()} else if(!fzOn&&fz>0){fz=Math.max(0,fz-dtF/650);draw()}
+  const fe=fz*fz*(3-2*fz); spanV=Math.exp(Math.log(spanH)+(Math.log(Math.min(spanH,12))-Math.log(spanH))*fe);
+  const pph=W/spanV, fine=pph>=8&&!!D.q;
   // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
   // so the cursor sits exactly on a reading; swiped fast, the chart runs smoothly and the dot glides along the curve
-  const yrv=pph*24<4, snapAt=t=>yrv?dayOf(t)+12*H:D.t[idxAt(t)];
+  const yrv=pph*24<4, snapAt=t=>yrv?dayOf(t)+12*H:fine&&inQ(t)?D.q.t0+qIdx(t)*Q:D.t[idxAt(t)];
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(vc==null||reduce||Math.abs(want-vc)>spanH*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
+  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
-  const t0=vc-spanH*H/2+pull/pph*H, t1=t0+spanH*H, top=60, bot=Ht-34, rainH=26;
+  const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right
   const Xb=ms=>(ms-t0)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
@@ -397,7 +428,7 @@ function render(){
   const stepY=(yMax-yMin)>40?10:5, yFirst=Math.ceil(yMin/stepY)*stepY;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;g.strokeStyle=v===0?C['grid-strong']:C.grid;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
   // hour ticks + midnight lines
-  const yr=dayW<4, hStep=pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
+  const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
   for(let ms=firstH;ms<=t1;ms+=hStep*H){
     const x=Math.round(X(ms))+.5, mid=new Date(ms).getUTCHours()===0;
@@ -435,7 +466,8 @@ function render(){
   g.fillStyle=C.rain; g.globalAlpha=.55;
   const days=yr?dayRange(t0-DAY,Math.min(t1,D.fut-H)):[]; if(yr){
     days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH);g.fillRect(X(d.k),Ht-4-h,Math.max(1,dayW-.3),h)}})}
-  else for(let i=i0;i<=i1;i++){const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}
+  else{ if(fine){const q=D.q, w=pph/4; for(let k=qIdx(t0-H);k<=qIdx(t1+H);k++){const r=q.rain[k];if(r>0){const h=Math.max(1.5,Math.min(1,r/0.75)*rainH);g.fillRect(X(q.t0+k*Q)-w/2+.5,Ht-4-h,Math.max(1,w-1),h)}}}
+  for(let i=i0;i<=i1;i++){if(fine&&inQ(D.t[i]))continue;const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}}
   g.globalAlpha=1;
   // pinned reference line
   if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
@@ -445,7 +477,10 @@ function render(){
     const band=days.map(d=>[X(d.k+12*H),Y(d.hi)]).concat(days.slice().reverse().map(d=>[X(d.k+12*H),Y(d.lo)]));
     if(band.length>2){g.beginPath();g.moveTo(band[0][0],band[0][1]);band.forEach(p=>g.lineTo(p[0],p[1]));g.closePath();g.fillStyle=C['ink-soft'];g.fill();g.globalAlpha=.6;g.fill();g.globalAlpha=1}
     days.forEach(d=>segs[0].push([X(d.k+12*H),Y(d.sum/d.n)]));
-  } else for(let i=i0;i<=i1;i++)segs[warp&&D.t[i]>=warp.from?1:0].push([X(D.t[i]),Y(D.temp[i])]);
+  } else {let qDone=false;
+    for(let i=i0;i<=i1;i++){const t=D.t[i];
+      if(fine&&inQ(t)){ if(!qDone){qDone=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) segs[0].push([X(q.t0+k*Q),Y(q.temp[k])])} continue }
+      segs[warp&&t>=warp.from?1:0].push([X(t),Y(D.temp[i])])}}
   const path=pts=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
   segs.forEach(pts=>{ if(pts.length<2) return;
     if(!yr){path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill()}
@@ -492,22 +527,24 @@ function render(){
   // center cursor
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
-  const dprC=devicePixelRatio||1, cx=(Math.floor(X(vc)*dprC)+.5)/dprC, cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
+  const dprC=devicePixelRatio||1, cx=(Math.floor(X(vc)*dprC)+.5)/dprC, cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, snapped to a device pixel
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
-  readout(ci,yr); drawOv(C);
+  const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
+  readout(ci,yr,tq); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
   const nowH=D.t[0]+Math.floor((D.now-D.t[0])/H)*H, atNow=!yr&&pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // any hour of today, while not swiping fast
-  if(atNow) trio(ci,ci===idxAt(nowH));
+  if(atNow) trio(ci,tq!=null?tq===D.q.t0+qIdx(D.now)*Q:ci===idxAt(nowH),tq);
   document.querySelector('header').classList.toggle('now',atNow);
   $('today').disabled=Math.abs(center-(D.t[0]+Math.floor((D.now-D.t[0])/H)*H))<H/2; // only when the cursor already stands on the current hour
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
 const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.now).getUTCFullYear()?' '+y:''};
-function trio(i,isNow){
-  const n=D.temp[i], y=D.temp[i-24], t=D.temp[i+24], ms=D.t[i], at='в '+hh(ms);
-  $('triTop').textContent=(isNow?'Сейчас':'Сегодня '+at+(ms>D.now?' · прогноз':''))+' · '+dLabel(ms)+(isNow?' · '+hh(ms):'')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
+function trio(i,isNow,tq){
+  const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
+  const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
+  $('triTop').textContent=(isNow?'Сейчас':'Сегодня '+at+(ms>D.now?' · прогноз':''))+' · '+dLabel(ms)+(isNow?' · '+hm(ms):'')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
   $('triN').textContent=fmtT(n); $('triY').textContent=fmtT(y); $('triT').textContent=fmtT(t);
   const mark=(el,d)=>{el.textContent=Math.abs(d)<1?'так же':fmtD(d)+(isNow?' к сейчас':' к сегодня');el.className=Math.abs(d)<1?'':d>0?'warm':'cool'};
   mark($('triYd'),y-n); mark($('triTd'),t-n);
@@ -518,17 +555,17 @@ function trio(i,isNow){
   const p2=Math.abs(dt)<1?'Завтра в это время — так же.':`Завтра в это время — на ${deg(dt)} ${word(dt)}.`;
   $('triSay').textContent=p1+'\n'+p2;
 }
-function readout(i,yr){ // in the year view the cursor stands on whole days and shows the daily mean
+function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${dd} дн.`:ad<14?`${ad} дн. назад`:ad<60?`${Math.round(ad/7)} нед. назад`:ad<351?`${Math.round(ad/30.4)} мес. назад`:yearsAgo(ad));
-  const val=yr?rec.sum/rec.n:D.temp[i];
+  const val=yr?rec.sum/rec.n:tq!=null?D.q.temp[qIdx(tq)]:D.temp[i];
   $('temp').textContent=fmtT(val);
-  $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+hh(ms));
+  $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
   const tg=rel+(yr?' · средняя за день':WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
   $('cond').textContent=`${fmtT(rec.lo)}…${fmtT(rec.hi)} · ${rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо'}`;
   // difference with the pin, or with the current hour (the current day's mean in the year view)
   const ref=pin!=null?idxAt(pin):idxAt(D.now), el=$('delta'); el.textContent='';
-  const rr=dayRec(D.t[ref]), refVal=yr?rr.sum/rr.n:D.temp[ref];
+  const rr=dayRec(D.t[ref]), refVal=yr?rr.sum/rr.n:(tq!=null&&pin==null&&inQ(D.now))?D.q.temp[qIdx(D.now)]:D.temp[ref];
   const dv=val-refVal, b=document.createElement('b'); b.textContent='Δ '+fmtD(dv); el.append(b);
   const ad2=Math.abs(dv), w=dv>0?'теплее':'холоднее';
   const vt=ad2<1?'Так же':ad2<3?'Чуть '+w:ad2<6?w[0].toUpperCase()+w.slice(1):ad2<10?'Заметно '+w:ad2<15?'Сильно '+w:'Намного '+w;
@@ -567,7 +604,7 @@ function drawOv(C){
     if(busy){o.fillStyle=C.ink;o.fillText('загрузка…',3,10)}
   }
   g.clearRect(0,0,W,Ht); g.drawImage(ovBg,0,0,W,Ht);
-  const x0=Math.max(0,X(center-spanH*H/2)),x1=Math.min(W,X(center+spanH*H/2));
+  const x0=Math.max(0,X(center-spanV*H/2)),x1=Math.min(W,X(center+spanV*H/2));
   g.fillStyle=C.fg;g.globalAlpha=.08;g.fillRect(x0,0,x1-x0,Ht);g.globalAlpha=1;
   g.strokeStyle=C.fg;g.lineWidth=1.5;g.strokeRect(x0+.75,.75,Math.max(2,x1-x0-1.5),Ht-1.5);
   g.fillStyle=C.fg;g.fillRect(X(D.now)-.5,0,1,Ht);
@@ -576,12 +613,12 @@ function drawOv(C){
 
 /* ---------- interaction ---------- */
 let drag=null;
-box.addEventListener('pointerdown',e=>{if(!D)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanH)*H};vel=0});
+box.addEventListener('pointerdown',e=>{if(!D)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
 window.addEventListener('pointermove',e=>{if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
   const dx=e.clientX-drag.last, now=performance.now();
-  const W=box.clientWidth, pph=W/spanH;
+  const W=box.clientWidth, pph=W/spanV;
   drag.v-=dx/pph*H; center=drag.v; clamp();
   const rr=Math.max(0,(drag.v-maxC())/H*pph), rl=Math.max(0,(minC()-drag.v)/H*pph), rub=r=>W*0.3*(1-Math.exp(-r/(W*0.6))); // rubber band at both ends
   pull=rr>0?rub(rr):-rub(rl);
@@ -604,8 +641,8 @@ function release(){ // reveal next week if pulled far enough; the pull springs b
     draw(); if(!done) raf=requestAnimationFrame(step)};
   raf=requestAnimationFrame(step);
 }
-function coast(){const step=()=>{vel*=.94;if(Math.abs(vel)<.02)return;center-=vel*16/(box.clientWidth/spanH)*H;const c=center;clamp();draw();if(c!==center)return;raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)}
-box.addEventListener('wheel',e=>{if(!D)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center+=d/(box.clientWidth/spanH)*H;clamp();draw()},{passive:false});
+function coast(){const step=()=>{vel*=.94;if(Math.abs(vel)<.02)return;center-=vel*16/(box.clientWidth/spanV)*H;const c=center;clamp();draw();if(c!==center)return;raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)}
+box.addEventListener('wheel',e=>{if(!D)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center+=d/(box.clientWidth/spanV)*H;clamp();draw()},{passive:false});
 box.tabIndex=0;
 box.addEventListener('keydown',e=>{if(!D)return;
   if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center+=(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?DAY:H);clamp();draw();e.preventDefault()}
@@ -617,6 +654,7 @@ ovbox.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
 ovbox.addEventListener('pointerup',()=>ovDrag=false);
 
 function setZoom(h){
+  fzOn=false;slowMs=0;
   if(vc!=null&&spanH<4000) center=vc; // start the new scale from the point under the cursor (the year view keeps the hour it was opened with)
   spanH=h;vc=null;spd=0;lastC=null;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
