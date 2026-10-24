@@ -14,7 +14,7 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12161d">
 <title>Термограф</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Unbounded:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
 <style>
 /* Layout: one screen — readout on top, draggable thermograph ribbon fills the middle, 3‑month overview strip as a scrubber below */
 :root{
@@ -23,7 +23,7 @@
   --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --night:rgba(44,62,104,.06); --hot:#c2482a; --cold:#1f74b5; --pin:#b07400; --warn:#8a5a00; --warn-bg:#fff3d6;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-data:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  /* type scale: 64 hero · 22 numbers · 16 text · 13 labels · 11 chart */
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
@@ -38,34 +38,31 @@ html{box-sizing:border-box} /* the safe-area padding on the root stays inside th
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
-/* header pinned to both edges: big reading + delta on the left, context on the right; every line is a fixed box */
-header{position:relative;min-height:118px;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"temp meta" "delta delta" "verdict verdict";column-gap:12px;row-gap:4px;align-items:end}
-.temp{grid-area:temp;height:1em;font:700 clamp(44px,12vw,72px)/1 var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
-.delta{grid-area:delta;height:28px;display:flex;align-items:center;gap:6px;font:500 13px/28px var(--f-data);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:0}
-.delta b{font:600 20px/28px var(--f-data);color:var(--fg)}
-.verdict{grid-area:verdict;height:20px;font:500 14px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* header: one fixed grid shared by the usual reading and the today view, so nothing moves when they swap */
+.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 18px 42px 26px 20px;row-gap:3px;column-gap:12px;
+  grid-template-areas:"temp when" "temp tag" "temp sub" "l1 l1" "l2 l2"}
+header{position:relative}
+.temp{grid-area:temp;align-self:start;height:64px;font:700 64px/64px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
+.when,.tag,.cond,.tri-pair{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{grid-area:when;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums}
+.tag{grid-area:tag;font:500 13px/18px var(--f-body);color:var(--ink)}
+.cond{grid-area:sub;align-self:start;font:400 13px/18px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
+.delta{grid-area:l1;display:flex;align-items:center;gap:8px;font:400 13px/26px var(--f-body);color:var(--muted);white-space:nowrap;min-width:0}
+.delta b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
+.delta button{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:24px;height:24px;display:grid;place-items:center;font:500 16px/1 var(--f-body);color:var(--pin);background:transparent;border:1px solid var(--pin);border-radius:50%;padding:0;cursor:pointer}
+.verdict{grid-area:l2;font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .verdict.warm{color:var(--hot)}.verdict.cool{color:var(--cold)}
-.delta button{align-self:center;box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:24px;height:24px;display:grid;place-items:center;font:500 14px/1 var(--f-body);color:var(--pin);background:transparent;border:1px solid var(--pin);border-radius:50%;padding:0;cursor:pointer}
-.meta{grid-area:meta;display:grid;grid-template-rows:20px 18px 18px;row-gap:2px;min-width:0;justify-items:end;text-align:right;padding-bottom:4px}
-.meta>div,.cond{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px}
-.when{font:500 14px var(--f-data);font-variant-numeric:tabular-nums}
 .hdr{transition:opacity .25s ease}
 header.now .hdr{opacity:0;visibility:hidden}
-/* today: the same layout as the usual reading, with yesterday and tomorrow at this time on the right */
-.trio{position:absolute;inset:0;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"temp meta" "say say";column-gap:12px;row-gap:6px;align-items:end;align-content:start;
-  opacity:0;visibility:hidden;transition:opacity .25s ease;background:var(--paper)}
+.trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .25s ease}
 header.now .trio{opacity:1;visibility:visible}
-.trio .temp{grid-area:temp}
-.tri-meta{grid-area:meta;display:grid;grid-template-rows:repeat(4,18px);row-gap:1px;justify-items:end;text-align:right;min-width:0;padding-bottom:4px}
-.tri-meta>div{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px}
-.tri-rel{display:flex;align-items:baseline;gap:6px;font:500 12px/18px var(--f-body);color:var(--muted)}
-.tri-rel b{font:600 15px/18px var(--f-data);color:var(--fg);font-variant-numeric:tabular-nums}
-.tri-rel i{font:500 12px var(--f-data);font-style:normal;color:var(--muted);min-width:6.5ch;text-align:right}
-.tri-rel i.warm{color:var(--hot)}.tri-rel i.cool{color:var(--cold)}
-.tri-say{grid-area:say;font:500 14px/20px var(--f-body);color:var(--muted);white-space:pre-line}
+.tri-pair{grid-area:sub;align-self:start;display:flex;gap:18px}
+.tri-pair>div{display:flex;flex-direction:column;align-items:flex-end}
+.tri-pair small{font:400 13px/16px var(--f-body);color:var(--muted)}
+.tri-pair b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
+.tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
-.tag{font:500 13px var(--f-body);color:var(--ink)}
-.cond{font:400 12px/18px var(--f-data);color:var(--muted);font-variant-numeric:tabular-nums}
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
   touch-action:pan-y;cursor:grab;user-select:none}
 .chartbox:active{cursor:grabbing}
@@ -84,15 +81,15 @@ canvas{display:block;width:100%;height:100%}
 .ibtn:disabled{opacity:.35;cursor:default}
 .btn:disabled{opacity:.35;cursor:default}
 button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.note{font:400 12px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
+.note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 .foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 14px}
 .city{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
 .sugg{position:absolute;left:0;bottom:calc(100% + 6px);z-index:15;width:min(320px,calc(100vw - 32px));margin:0;padding:4px;list-style:none;
   background:var(--paper);border:1px solid var(--grid);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16)}
 .sugg li{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
 .sugg li[aria-selected="true"],.sugg li:hover{background:var(--paper-2)}
-.sugg b{font:500 15px var(--f-body);color:var(--fg)}
-.sugg span{font:400 12px var(--f-body);color:var(--muted)}
+.sugg b{font:500 16px var(--f-body);color:var(--fg)}
+.sugg span{font:400 13px var(--f-body);color:var(--muted)}
 .city input{font:500 16px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:14ch;min-width:0}
 .city input:focus{outline:none;border-bottom-color:var(--ink)}
 .locbtn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:999px;background:var(--paper-2);color:var(--ink);cursor:pointer;padding:0;flex:none}
@@ -101,11 +98,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .chartbox canvas,.ovbox canvas{transition:opacity .35s ease}
 .chartbox.loading canvas{opacity:.25}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);transform:translate(-50%,12px);opacity:0;pointer-events:none;z-index:20;
-  max-width:calc(100% - 32px);background:var(--fg);color:var(--paper);font:500 14px/1.3 var(--f-body);padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);transition:opacity .25s ease,transform .25s ease}
+  max-width:calc(100% - 32px);background:var(--fg);color:var(--paper);font:500 16px/1.3 var(--f-body);padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);transition:opacity .25s ease,transform .25s ease}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){.toast,.chartbox canvas{transition:none}.locbtn.busy svg{animation:none}}
-.city .lbl{font:500 11px var(--f-data);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.src{font:400 11px var(--f-data);color:var(--muted)}
+.city .lbl{font:400 13px var(--f-body);color:var(--muted)}
+.src{font:400 13px var(--f-body);color:var(--muted)}
 .src a{color:inherit}
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -117,24 +114,20 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="app">
-  <header>
+  <header class="hgrid">
     <div class="temp hdr" id="temp">—</div>
-    <div class="meta hdr">
-      <div class="when" id="when">Загрузка…</div>
-      <div class="tag" id="tag">&nbsp;</div>
-      <div class="cond" id="cond">&nbsp;</div>
-    </div>
+    <div class="when hdr" id="when">Загрузка…</div>
+    <div class="tag hdr" id="tag">&nbsp;</div>
+    <div class="cond hdr" id="cond">&nbsp;</div>
     <div class="delta hdr" id="delta">&nbsp;</div>
     <div class="verdict hdr" id="verdict">&nbsp;</div>
-    <div class="trio" id="trio" aria-live="polite">
+    <div class="trio hgrid" id="trio" aria-live="polite">
       <div class="temp" id="triN">—</div>
-      <div class="tri-meta">
-        <div class="when" id="triWhen">&nbsp;</div>
-        <div class="tag" id="triTop">&nbsp;</div>
-        <div class="tri-rel">Вчера <b id="triY">—</b><i id="triYd">&nbsp;</i></div>
-        <div class="tri-rel">Завтра <b id="triT">—</b><i id="triTd">&nbsp;</i></div>
-      </div>
-      <div class="tri-say" id="triSay">&nbsp;</div>
+      <div class="when" id="triWhen">&nbsp;</div>
+      <div class="tag" id="triTop">&nbsp;</div>
+      <div class="tri-pair"><div><small>Вчера</small><b id="triY">—</b></div><div><small>Завтра</small><b id="triT">—</b></div></div>
+      <div class="tri-say" id="triSay1">&nbsp;</div>
+      <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
   </header>
   <div class="note" id="note" hidden>Здесь показан пример: внутри Claude страница не может запросить погоду. Настоящие данные — на tastex.github.io/termograf.</div>
@@ -171,7 +164,7 @@ const chart=$('chart'), ov=$('ov'), box=$('chartbox'), ovbox=$('ovbox');
 const WD=['вс','пн','вт','ср','чт','пт','сб'], MON=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
 const REL={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'};
 const WC={0:'ясно',1:'почти ясно',2:'облачно',3:'пасмурно',45:'туман',48:'изморозь',51:'морось',53:'морось',55:'сильная морось',56:'ледяная морось',57:'ледяная морось',61:'небольшой дождь',63:'дождь',65:'сильный дождь',66:'ледяной дождь',67:'ледяной дождь',71:'небольшой снег',73:'снег',75:'сильный снег',77:'снежная крупа',80:'ливень',81:'ливень',82:'сильный ливень',85:'снегопад',86:'сильный снегопад',95:'гроза',96:'гроза с градом',99:'гроза с градом'};
-const MONO='"IBM Plex Mono",ui-monospace,monospace';
+const MONO='"Golos Text",system-ui,sans-serif'; // chart labels use the text face
 
 let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
 const Q=H/4; // quarter hour
@@ -391,7 +384,13 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-let drawQ=0, fade=null, vc=null, lastC=null, spd=0;
+// haptics: Android has navigator.vibrate; on iPhone, toggling a hidden switch control gives a Taptic click (Safari on iOS 18 and later)
+const tick=(()=>{let l=null; return ()=>{try{
+  if(navigator.vibrate){navigator.vibrate(5);return}
+  if(!l){l=document.createElement('label'); l.setAttribute('aria-hidden','true'); l.style.cssText='position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden';
+    const i=document.createElement('input'); i.type='checkbox'; i.setAttribute('switch',''); i.tabIndex=-1; l.append(i); document.body.append(l)}
+  l.click()}catch(e){}}})();
+let tickAt=null, drawQ=0, fade=null, vc=null, lastC=null, spd=0;
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   fade={from,e:0}; const t0=performance.now();
@@ -417,6 +416,8 @@ function render(){
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
+  // a click for every step, like the crown of a watch: each hour (or quarter hour, or day) while moving slowly, only the last one after a fast swipe
+  if(spd<=3&&want!==tickAt&&(drag||Math.abs(want-vc)<(yrv?DAY:H)*0.01)){ if(tickAt!=null) tick(); tickAt=want }
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
@@ -450,7 +451,7 @@ function render(){
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
     if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
-    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 10px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
+    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
   }
   // day labels: sticky to the left edge of each visible day, two lines
   for(let d=d0;d<=t1;d+=DAY){
@@ -517,7 +518,7 @@ function render(){
     tagText(g,txt,tx,ty,c,C.paper)});
   // now marker
   if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(xn+.5,top-8);g.lineTo(xn+.5,bot);g.stroke();g.setLineDash([]);
-    g.textBaseline='alphabetic';g.font='500 10px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
+    g.textBaseline='alphabetic';g.font='500 11px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
   // pin marker
   if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
     if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
@@ -528,7 +529,7 @@ function render(){
   if(pull<-2&&xs>0){const more=D.partial||D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
     const cx2=xs/2, cy2=(top+bot)/2; g.fillStyle=more?C.ink:C.muted; g.strokeStyle=g.fillStyle; g.lineWidth=2; g.lineCap='round';
     g.beginPath();g.moveTo(cx2+6,cy2-30);g.lineTo(cx2-6,cy2-22);g.lineTo(cx2+6,cy2-14);g.stroke();
-    g.font='600 12px '+MONO; const l=D.partial?['Загружаю','прошлые дни']:more?['Загружаю','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
+    g.font='600 13px '+MONO; const l=D.partial?['Загружаю','прошлые дни']:more?['Загружаю','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
     g.font='400 11px '+MONO; g.fillText(l[1],cx2,cy2+18); g.restore()}
   // pull-for-more hint past the revealed end
   if(pull>2&&xf<W){const more=D.partial||D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15&&!D.partial;
@@ -536,7 +537,7 @@ function render(){
     const cx2=xf+(W-xf)/2, cy2=(top+bot)/2;
     g.strokeStyle=more?C.ink:C.muted;g.lineWidth=2;g.lineCap='round';g.beginPath();
     g.moveTo(cx2-6,cy2-30);g.lineTo(cx2+6,cy2-22);g.lineTo(cx2-6,cy2-14);g.stroke();
-    g.fillStyle=more?C.ink:C.muted;g.font='600 12px '+MONO;
+    g.fillStyle=more?C.ink:C.muted;g.font='600 13px '+MONO;
     const l=D.partial?['Загружаю','прогноз']:more?(ready?['Отпустите','покажу неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   // center cursor
@@ -563,13 +564,12 @@ function trio(i,isNow,tq){
   $('triTop').textContent=(isNow?'Сейчас':ms>D.now?'Сегодня · прогноз':'Сегодня')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
   $('triN').textContent=fmtT(n); $('triY').textContent=fmtT(y); $('triT').textContent=fmtT(t);
   const mark=(el,d)=>{el.textContent=Math.abs(d)<1?'так же':fmtD(d);el.className=Math.abs(d)<1?'':d>0?'warm':'cool'};
-  mark($('triYd'),y-n); mark($('triTd'),t-n);
   const deg=d=>{const a=Math.round(Math.abs(d));return a+'°'}, word=d=>d>0?'теплее':'холоднее';
   const dy=n-y, dt=t-n;
   const who=isNow?'Сейчас':'Сегодня '+at;
-  const p1=Math.abs(dy)<1?`${who} так же, как вчера в это время.`:`${who} на ${deg(dy)} ${word(dy)}, чем вчера.`;
+  const p1=Math.abs(dy)<1?'Так же, как вчера в это время.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
   const p2=Math.abs(dt)<1?'Завтра в это время — так же.':`Завтра в это время — на ${deg(dt)} ${word(dt)}.`;
-  $('triSay').textContent=p1+'\n'+p2;
+  $('triSay1').textContent=p1; $('triSay2').textContent=p2;
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
@@ -610,7 +610,7 @@ function drawOv(C){
       o.globalAlpha=.10;o.fillStyle=C.cold;o.fillRect(w0,0,w1-w0,Ht-10);o.fillStyle=C.hot;o.fillRect(s0,0,s1-s0,Ht-10);o.globalAlpha=1}
     o.fillStyle=C.ink;o.globalAlpha=.6;
     for(const d of D.days){if(!d||d.k>=b)continue;const x=X(d.k),w=Math.max(.6,X(d.k+DAY)-x-(long?0:1));o.fillRect(x,Y(d.hi),w,Math.max(1,Y(d.lo)-Y(d.hi)))}
-    o.globalAlpha=1;o.font='500 10px '+MONO;o.textBaseline='alphabetic'; let lastEnd=-1;
+    o.globalAlpha=1;o.font='500 11px '+MONO;o.textBaseline='alphabetic'; let lastEnd=-1;
     for(let d=new Date(Date.UTC(new Date(a).getUTCFullYear(),new Date(a).getUTCMonth(),1));d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){
       const m=d.getTime(); if(m<a) continue; const x=X(m), jan=d.getUTCMonth()===0;
       o.fillStyle=C.muted;
@@ -641,6 +641,7 @@ window.addEventListener('pointermove',e=>{if(!drag)return;
   vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();});
 window.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
   if(d.lock!=='x') return;
+  if(fzOn){fzOn=false;slowMs=0;draw()} // letting go after a close look returns to the chosen scale
   if(pull!==0){release();return}
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches)coast();
 });
