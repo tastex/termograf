@@ -37,6 +37,8 @@
 2. Edit code → заменить код содержимым `cloudflare/worker.js` → Deploy.
 3. Открыть один раз `https://tastex.github.io/termograf/?mirror=https://termograf.<ваш-аккаунт>.workers.dev` — адрес запомнится на этом устройстве. Либо вписать его в константу `MIRROR` в `index.html` и `three.html`, тогда он будет работать везде.
 
+Если воркер подключён к этому репозиторию (Workers Builds), Cloudflare сам берёт настройки из `wrangler.jsonc` и пересобирает зеркало при каждом пуше в `main`. Имя в `wrangler.jsonc` должно совпадать с именем воркера.
+
 Бесплатный тариф Workers — 100 000 запросов в сутки.
 
 ## Публикация
