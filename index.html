@@ -497,23 +497,24 @@ function render(){
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
   readout(ci,yr); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
-  const nowH=D.t[0]+Math.floor((D.now-D.t[0])/H)*H, atNow=!yr&&pin==null&&!drag&&pull===0&&spd<0.5&&Math.abs(vc-nowH)<H/2&&ci>=24&&ci+24<D.t.length;
-  if(atNow) trio(ci);
+  const nowH=D.t[0]+Math.floor((D.now-D.t[0])/H)*H, atNow=!yr&&pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // any hour of today, while not swiping fast
+  if(atNow) trio(ci,ci===idxAt(nowH));
   document.querySelector('header').classList.toggle('now',atNow);
   $('today').disabled=Math.abs(center-(D.t[0]+Math.floor((D.now-D.t[0])/H)*H))<H/2; // only when the cursor already stands on the current hour
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
 const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.now).getUTCFullYear()?' '+y:''};
-function trio(i){
-  const n=D.temp[i], y=D.temp[i-24], t=D.temp[i+24], ms=D.t[i];
-  $('triTop').textContent='Сейчас · '+dLabel(ms)+' · '+hh(ms)+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
+function trio(i,isNow){
+  const n=D.temp[i], y=D.temp[i-24], t=D.temp[i+24], ms=D.t[i], at='в '+hh(ms);
+  $('triTop').textContent=(isNow?'Сейчас':'Сегодня '+at+(ms>D.now?' · прогноз':''))+' · '+dLabel(ms)+(isNow?' · '+hh(ms):'')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
   $('triN').textContent=fmtT(n); $('triY').textContent=fmtT(y); $('triT').textContent=fmtT(t);
-  const mark=(el,d)=>{el.textContent=Math.abs(d)<1?'так же':fmtD(d)+' к сейчас';el.className=Math.abs(d)<1?'':d>0?'warm':'cool'};
+  const mark=(el,d)=>{el.textContent=Math.abs(d)<1?'так же':fmtD(d)+(isNow?' к сейчас':' к сегодня');el.className=Math.abs(d)<1?'':d>0?'warm':'cool'};
   mark($('triYd'),y-n); mark($('triTd'),t-n);
   const deg=d=>{const a=Math.round(Math.abs(d));return a+'°'}, word=d=>d>0?'теплее':'холоднее';
   const dy=n-y, dt=t-n;
-  const p1=Math.abs(dy)<1?'Сейчас так же, как вчера в это время.':`Сейчас на ${deg(dy)} ${word(dy)}, чем вчера.`;
+  const who=isNow?'Сейчас':'Сегодня '+at;
+  const p1=Math.abs(dy)<1?`${who} так же, как вчера в это время.`:`${who} на ${deg(dy)} ${word(dy)}, чем вчера.`;
   const p2=Math.abs(dt)<1?'Завтра в это время — так же.':`Завтра в это время — на ${deg(dt)} ${word(dt)}.`;
   $('triSay').textContent=p1+'\n'+p2;
 }
