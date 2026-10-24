@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-visual">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Термограф">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f5f7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12161d">
+<title>Утро, день, вечер</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Experimental: three stacked charts — mornings, middays, evenings — one point per day, so the day/night swing is gone and the drift from day to day shows */
+:root{
+  --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
+  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13);
+  --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --hot:#c2482a; --cold:#1f74b5; --warn:#8a5a00; --warn-bg:#fff3d6;
+  --c-m:#2f86b8; --c-d:#c2482a; --c-e:#5b3fc4;
+  --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
+  --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* type scale: 40 numbers · 16 text · 13 labels · 11 chart */
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.16);
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412;
+  --c-m:#5bb3e6; --c-d:#ff8a66; --c-e:#a891ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.16);
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412;
+  --c-m:#5bb3e6; --c-d:#ff8a66; --c-e:#a891ff; color-scheme:dark}
+html,body{height:100%}
+html{box-sizing:border-box}
+body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
+.app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
+header{display:grid;grid-template-rows:22px 18px 44px 18px;row-gap:2px}
+.when{display:flex;justify-content:space-between;gap:12px;font:500 16px/22px var(--f-body);white-space:nowrap;font-variant-numeric:tabular-nums}
+.when span:last-child{color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+.cols{display:contents}
+.row{display:grid;grid-template-columns:repeat(3,1fr);column-gap:12px;min-width:0}
+.row>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lbl{font:500 13px/18px var(--f-body)}
+.lbl.m{color:var(--c-m)}.lbl.d{color:var(--c-d)}.lbl.e{color:var(--c-e)}
+.num{font:700 40px/44px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.dv{font:400 13px/18px var(--f-body);color:var(--muted)}
+.dv.warm{color:var(--hot)}.dv.cool{color:var(--cold)}
+.chartbox{flex:1;min-height:260px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:grab;user-select:none}
+.chartbox:active{cursor:grabbing}
+canvas{display:block;width:100%;height:100%}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
+.seg button{display:flex;align-items:center;font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:0 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.ibtn{box-sizing:border-box;flex:none;width:36px;height:36px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer;padding:0}
+.ibtn:disabled{opacity:.35;cursor:default}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.foot{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;font:400 13px var(--f-body);color:var(--muted)}
+.foot b{font:500 16px var(--f-body);color:var(--fg)}
+.foot a{color:var(--ink)}
+.note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
+</style>
+<style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
+:root.ios-app{padding-top:max(env(safe-area-inset-top,0px),54px);padding-bottom:max(env(safe-area-inset-bottom,0px),20px)}</style>
+<script>if(navigator.standalone)document.documentElement.classList.add("ios-app")</script>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="when"><span id="date">Загрузка…</span><span id="rel"></span></div>
+    <div class="row"><div class="lbl m">Утро · 6–10</div><div class="lbl d">День · 12–16</div><div class="lbl e">Вечер · 18–22</div></div>
+    <div class="row"><div class="num" id="nm">—</div><div class="num" id="nd">—</div><div class="num" id="ne">—</div></div>
+    <div class="row"><div class="dv" id="dm">&nbsp;</div><div class="dv" id="dd">&nbsp;</div><div class="dv" id="de">&nbsp;</div></div>
+  </header>
+  <div class="note" id="note" hidden>Здесь показан пример: внутри Claude страница не может запросить погоду. Настоящие данные — на tastex.github.io/termograf/three.html.</div>
+  <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день; тяните влево и вправо"></canvas></div>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Масштаб">
+      <button data-d="14">2 недели</button><button data-d="31">Месяц</button><button data-d="92">3 месяца</button>
+    </div>
+    <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+  </div>
+  <div class="foot"><span><b id="city">—</b> · эксперимент</span><a id="back" href="./">Обычный график</a></div>
+</div>
+
+<script>
+(()=>{
+const H=3600e3, DAY=24*H, $=id=>document.getElementById(id);
+const WD=['вс','пн','вт','ср','чт','пт','сб'], MON=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const FONT='"Golos Text",system-ui,sans-serif';
+const PARTS=[{k:'m',a:6,b:10,name:'Утро'},{k:'d',a:12,b:16,name:'День'},{k:'e',a:18,b:22,name:'Вечер'}];
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
+const dayOf=ms=>Math.floor(ms/DAY)*DAY;
+
+let days=[], todayI=0, nowMs=0, center=0, vc=0, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0;
+try{span=+store.get('x3span')||14}catch(e){}
+
+/* ---------- data: one value per day for each part of the day ---------- */
+function build(t,temp,now){
+  const map=new Map();
+  for(let i=0;i<t.length;i++){const v=temp[i]; if(v==null) continue; const d=dayOf(t[i]), h=new Date(t[i]).getUTCHours();
+    let r=map.get(d); if(!r){r={k:d,s:[0,0,0],n:[0,0,0],last:[0,0,0]};map.set(d,r)}
+    PARTS.forEach((p,j)=>{if(h>=p.a&&h<=p.b){r.s[j]+=v;r.n[j]++;r.last[j]=Math.max(r.last[j],t[i])}})}
+  days=[...map.values()].sort((a,b)=>a.k-b.k).map(r=>({k:r.k,v:r.n.map((n,j)=>n>=3?r.s[j]/n:null),fc:r.last.map(x=>x>now)}));
+  nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now)));
+}
+function sample(){
+  const now=Date.now()+3*H, t=[], temp=[], a=dayOf(now)-92*DAY, b=dayOf(now)+16*DAY;
+  for(let x=a;x<b;x+=H){const k=x/H, doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, hr=new Date(x).getUTCHours();
+    t.push(x); temp.push(6+13*Math.cos((doy-200)/365*2*Math.PI)+3*Math.sin(k/41)+2*Math.sin(k/97+1)+4.5*Math.cos((hr-15)/24*2*Math.PI))}
+  build(t,temp,now);
+}
+async function place(){
+  const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon'));
+  if(isFinite(lat)&&isFinite(lon)) return {name:q.get('city')||'Место',lat,lon};
+  try{const w=JSON.parse(store.get('place')||'null'); if(w) return w}catch(e){}
+  return {name:'Москва',lat:55.756,lon:37.617};
+}
+async function load(){
+  const w=await place(); $('city').textContent=w.name;
+  $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon;
+  const key='x3:'+w.lat+','+w.lon, P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
+  const use=j=>{build(j.hourly.time.map(P),j.hourly.temperature_2m,Date.now()+j.utc_offset_seconds*1000)};
+  let shown=false;
+  try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true;goToday(true)}}catch(e){}
+  try{
+    const j=await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=temperature_2m&past_days=92&forecast_days=16&timezone=auto`)).json();
+    if(!j.hourly) throw 0; store.set(key,JSON.stringify({at:Date.now(),j})); const keep=shown?days[Math.round(vc)]?.k:null; use(j);
+    if(keep!=null){const i=days.findIndex(d=>d.k===keep); center=vc=i<0?todayI:i; draw()} else goToday(true);
+  }catch(e){ if(!shown){sample(); $('note').hidden=false; goToday(true)} }
+}
+
+/* ---------- view ---------- */
+const clampC=c=>Math.max(0,Math.min(days.length-1,c));
+function goToday(now){center=todayI; if(now) vc=center; ys=null; draw()}
+function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
+  if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
+  const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
+function scaleFor(j){ // each chart scales to what is around the view, so day-to-day changes fill its height
+  let lo=1e9,hi=-1e9; const a=Math.max(0,Math.floor(vc-span)), b=Math.min(days.length-1,Math.ceil(vc+span));
+  for(let i=a;i<=b;i++){const v=days[i].v[j]; if(v==null) continue; if(v<lo)lo=v; if(v>hi)hi=v}
+  if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
+  return [mn,mx];
+}
+function draw(){ if(!days.length||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
+function render(){
+  const [g,W,Ht]=fit($('cv')), ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e'].forEach(k=>C[k]=css('--'+k));
+  // the view follows the finger; at rest it settles on a whole day
+  const want=drag?center:Math.round(center);
+  vc+=(want-vc)*(drag?1:.3); if(Math.abs(want-vc)>.002) draw(); else vc=want;
+  const X=i=>W/2+(i-vc)*ppd, top=26, gap=10, bandH=(Ht-top-gap*2-4)/3;
+  // smooth per-chart scales
+  const tgt=PARTS.map((_,j)=>scaleFor(j)); if(!ys) ys=tgt.map(s=>s.slice());
+  let moving=false; ys.forEach((s,j)=>{for(const q of [0,1]){const d=tgt[j][q]-s[q]; if(Math.abs(d)>.02){s[q]+=d*.2;moving=true} else s[q]=tgt[j][q]}}); if(moving) draw();
+  g.clearRect(0,0,W,Ht);
+  const i0=Math.max(0,Math.floor(vc-span/2)-1), i1=Math.min(days.length-1,Math.ceil(vc+span/2)+1);
+  // future, today, week and month lines, date labels
+  const xt=X(todayI)+ppd/2; if(xt<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xt),0,W-Math.max(0,xt),Ht)}
+  g.font='400 11px '+FONT; g.textBaseline='alphabetic';
+  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), x=Math.round(X(i))+.5, first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1;
+    if(mon||first){g.strokeStyle=first?C['grid-strong']:C.grid;g.beginPath();g.moveTo(x,top-6);g.lineTo(x,Ht);g.stroke()}
+    const label=ppd>=18?String(dt.getUTCDate()):ppd>=8?(mon?String(dt.getUTCDate()):''):(first?'':'');
+    if(first){g.fillStyle=C.fg;g.font='600 11px '+FONT;g.fillText(MON[dt.getUTCMonth()],x+3,13);g.font='400 11px '+FONT}
+    else if(label){g.fillStyle=i===todayI?C.ink:C.muted;const w=g.measureText(label).width;g.fillText(label,X(i)-w/2,13)}}
+  // three bands
+  PARTS.forEach((p,j)=>{
+    const y0=top+j*(bandH+gap), [mn,mx]=ys[j], Y=v=>y0+8+(mx-v)/(mx-mn||1)*(bandH-16), col=C['c-'+p.k];
+    g.strokeStyle=C.grid;g.lineWidth=1;
+    const step=(mx-mn)>16?5:2;
+    g.font='400 11px '+FONT;g.textBaseline='middle';
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Math.round(Y(v))+.5;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+    g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(0,y0+bandH+gap/2+.5);g.lineTo(W,y0+bandH+gap/2+.5);g.stroke();
+    // line through one point per day; forecast drawn lighter
+    const pts=[];for(let i=i0;i<=i1;i++){const v=days[i].v[j]; if(v!=null) pts.push([X(i),Y(v),i])}
+    if(pts.length>1){
+      const path=()=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx2=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx2,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
+      g.lineWidth=2.2;g.lineJoin='round';g.strokeStyle=col;
+      g.save();g.beginPath();g.rect(0,0,Math.max(0,xt),Ht);g.clip();path();g.stroke();g.restore();
+      if(xt<W){g.save();g.beginPath();g.rect(Math.max(0,xt),0,W,Ht);g.clip();g.globalAlpha=.45;path();g.stroke();g.restore()}
+      if(ppd>=12) pts.forEach(([x,y,i])=>{g.beginPath();g.arc(x,y,2.6,0,7);g.fillStyle=i>todayI?C.paper:col;g.fill();if(i>todayI){g.lineWidth=1.5;g.strokeStyle=col;g.stroke()}})}
+    // scale labels on top
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v), t=fmtT(v), w=g.measureText(t).width;g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(0,y-7,w+6,14);g.globalAlpha=1;g.fillStyle=C.muted;g.fillText(t,2,y)}
+    // cursor dot
+    const ci=Math.round(vc), v=days[ci]?.v[j];
+    if(v!=null){const cx=W/2, cy=Y(curve(j,vc)); g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=col;g.stroke()}
+  });
+  // cursor line
+  const cx=(Math.floor(W/2*(devicePixelRatio||1))+.5)/(devicePixelRatio||1);
+  g.globalCompositeOperation='destination-over';g.strokeStyle=C.fg;g.globalAlpha=.35;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-6);g.lineTo(cx,Ht);g.stroke();g.globalAlpha=1;g.globalCompositeOperation='source-over';
+  readout(Math.round(vc));
+  $('today').disabled=Math.round(vc)===todayI&&!drag;
+}
+function curve(j,t){ // value of the smoothed line at fractional day t, matching how it is drawn
+  const k=Math.round(t), u=Math.max(0,Math.min(1,t-k+.5)), val=i=>days[i]?.v[j]??null, v=val(k);
+  if(v==null) return 0; const a=val(k-1), b=val(k+1), m0=a==null?v:(a+v)/2, m1=b==null?v:(v+b)/2;
+  return (1-u)*(1-u)*m0+2*u*(1-u)*v+u*u*m1;
+}
+function readout(i){
+  const d=days[i]; if(!d) return; const dt=new Date(d.k), dd=Math.round((d.k-dayOf(nowMs))/DAY);
+  const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${dd} дн.`:`${-dd} дн. назад`);
+  $('date').textContent=WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+(dt.getUTCFullYear()!==new Date(nowMs).getUTCFullYear()?' '+dt.getUTCFullYear():'');
+  $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'');
+  PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+p.k).textContent=fmtT(v);
+    const el=$('d'+p.k); if(v==null||pv==null){el.textContent=' ';el.className='dv';return}
+    const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'как накануне':(r>0?'+':'−')+Math.abs(r)+'° к накануне'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
+}
+
+/* ---------- interaction ---------- */
+const box=$('box');
+box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null};vel=0});
+window.addEventListener('pointermove',e=>{if(!drag)return;
+  if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
+  if(drag.lock!=='x')return;
+  const dx=e.clientX-drag.last, now=performance.now(), ppd=box.clientWidth/span;
+  center=clampC(center-dx/ppd); vel=dx/Math.max(8,now-drag.t)/ppd; drag.last=e.clientX; drag.t=now; draw()});
+window.addEventListener('pointerup',()=>{if(!drag)return;const was=drag.lock==='x';drag=null;
+  if(was&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const step=()=>{vel*=.93;if(Math.abs(vel)<.0004){draw();return}center=clampC(center-vel*16);draw();raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)} else draw()});
+window.addEventListener('pointercancel',()=>{drag=null;draw()});
+box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center=clampC(center+d/(box.clientWidth/span));clearTimeout(box._w);drag={lock:'x'};box._w=setTimeout(()=>{drag=null;draw()},120);draw()},{passive:false});
+box.tabIndex=0;
+box.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center=clampC(Math.round(center)+(e.key==='ArrowLeft'?-1:1));draw();e.preventDefault()}});
+function setSpan(d){span=d;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.d===d)));ys=null;draw()}
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
+$('today').addEventListener('click',()=>goToday(false));
+addEventListener('resize',draw);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
+setSpan([14,31,92].includes(span)?span:14);
+load();
+})();
+</script>
+</body>
+</html>

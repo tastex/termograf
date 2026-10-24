@@ -1,6 +1,6 @@
 // Термограф: the page itself works offline; weather requests always go to the network.
-const CACHE = 'termograf-v15';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon.png'];
+const CACHE = 'termograf-v16';
+const SHELL = ['./', './index.html', './three.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
