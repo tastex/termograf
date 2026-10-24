@@ -238,12 +238,26 @@ function regular(o){
 const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten years (Open-Meteo archive goes back to 1940)
 let LOC=null, busy=false, pinWant=null;
 // where: {name, lat, lon}
+// Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
+// The mirror address goes into MIRROR below, or once through the link: ?mirror=https://name.account.workers.dev
+const MIRROR='';
+const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive','geocoding-api.open-meteo.com':'geo'};
+(()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
+const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
+function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
+async function om(u){
+  const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
+  let skip=false; try{skip=sessionStorage.getItem('omDirect')==='no'}catch(e){}
+  if(via&&skip) return fetch(via);
+  try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
+  catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
+}
 // Opening is staged so it feels instant:
 // 1) the last quick answer for this place from the phone's memory (if under three hours old) is drawn right away;
 // 2) a small request — yesterday, today, tomorrow and the day after, hourly and every 15 minutes — replaces it in a moment;
 // 3) three months back and two weeks ahead arrive in the background. Scrolling into what is not there yet shows that it is loading.
 const WX='https://api.open-meteo.com/v1/forecast', VARS='temperature_2m,precipitation,weather_code';
-async function getJ(u){const j=await (await fetch(u)).json(); if(!j.hourly) throw new Error('api'); return j}
+async function getJ(u){const j=await (await om(u)).json(); if(!j.hourly) throw new Error('api'); return j}
 function setData(where,j,partial){
   const keep=D&&!D.sample&&D.where&&D.where.lat===where.lat&&D.where.lon===where.lon&&vc!=null?vc:null;
   D=parse(j,where.lat); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
@@ -304,7 +318,7 @@ async function loadQ(where){
 }
 const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
 async function geocodeAll(name,count){
-  const g=await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=${count}&language=ru&name=`+encodeURIComponent(name))).json();
+  const g=await (await om(`https://geocoding-api.open-meteo.com/v1/search?count=${count}&language=ru&name=`+encodeURIComponent(name))).json();
   return (g.results||[]).map(p=>({name:p.name,lat:p.latitude,lon:p.longitude,region:[p.admin1,p.country].filter((x,i,a)=>x&&a.indexOf(x)===i&&x!==p.name).join(', ')}));
 }
 async function geocode(name){const r=await geocodeAll(name,1);return r[0]?{name:r[0].name,lat:r[0].lat,lon:r[0].lon}:null}
@@ -343,7 +357,7 @@ async function extendBack(){
     if(D.sample){await new Promise(r=>setTimeout(r,250)); o=fakeRange(start,end)}
     else{
       const u=`https://archive-api.open-meteo.com/v1/archive?latitude=${LOC.lat}&longitude=${LOC.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&timezone=auto`;
-      o=parse(await (await fetch(u)).json(),LOC.lat);
+      o=parse(await (await om(u)).json(),LOC.lat);
     }
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');

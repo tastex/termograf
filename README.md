@@ -29,6 +29,16 @@
 
 Для каждого города можно сохранить отдельную иконку, она подписана названием города. Страница открывается и без сети (последняя версия из кэша), сами данные о погоде всегда запрашиваются заново.
 
+## Зеркало Open‑Meteo через Cloudflare
+
+Если `open-meteo.com` из вашей сети не открывается, страница может ходить через своё зеркало — Cloudflare Worker из `cloudflare/worker.js`. Сначала она пробует Open‑Meteo напрямую (5 секунд), не вышло — переключается на зеркало до конца сессии.
+
+1. dash.cloudflare.com → Workers & Pages → Create → Worker, назвать, например, `termograf`, Deploy.
+2. Edit code → заменить код содержимым `cloudflare/worker.js` → Deploy.
+3. Открыть один раз `https://tastex.github.io/termograf/?mirror=https://termograf.<ваш-аккаунт>.workers.dev` — адрес запомнится на этом устройстве. Либо вписать его в константу `MIRROR` в `index.html` и `three.html`, тогда он будет работать везде.
+
+Бесплатный тариф Workers — 100 000 запросов в сутки.
+
 ## Публикация
 
 Весь сайт — один файл `index.html`. GitHub Pages: Settings → Pages → Deploy from a branch → `main` / `(root)`.

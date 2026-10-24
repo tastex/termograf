@@ -125,6 +125,20 @@ let center=0, vc=0, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, l
 let focus=null, wNow=[1,1,1], wFrom=[1,1,1], wTo=[1,1,1], wT0=0;   // band weights; a tapped chart takes the whole height
 try{span=+store.get('x3span')||14}catch(e){}
 
+// Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
+// The mirror address goes into MIRROR below, or once through the link: ?mirror=https://name.account.workers.dev
+const MIRROR='';
+const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive','geocoding-api.open-meteo.com':'geo'};
+(()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
+const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
+function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
+async function om(u){
+  const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
+  let skip=false; try{skip=sessionStorage.getItem('omDirect')==='no'}catch(e){}
+  if(via&&skip) return fetch(via);
+  try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
+  catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
+}
 /* ---------- data: one value per day for each part of the day ---------- */
 function daysFrom(t,temp,now){
   const map=new Map();
@@ -158,7 +172,7 @@ async function load(){
   let shown=false;
   try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}}catch(e){}
   try{
-    const j=await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=temperature_2m&past_days=92&forecast_days=16&timezone=auto`)).json();
+    const j=await (await om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=temperature_2m&past_days=92&forecast_days=16&timezone=auto`)).json();
     if(!j.hourly) throw 0; store.set(key,JSON.stringify({at:Date.now(),j})); use(j);
   }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,temp]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,temp,now),now); $('note').hidden=false } }
 }
@@ -170,7 +184,7 @@ async function extendBack(){ // a year of archive when the view gets near the ol
   try{
     let list;
     if(sample){await new Promise(r=>setTimeout(r,300)); const [t,temp]=fakeHours(start,end); list=daysFrom(t,temp,nowMs)}
-    else{const j=await (await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m&timezone=auto`)).json();
+    else{const j=await (await om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m&timezone=auto`)).json();
       list=daysFrom(j.hourly.time.map(P),j.hourly.temperature_2m,nowMs)}
     list=list.filter(d=>d.k<end); if(!list.length) throw 0;
     const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n;
