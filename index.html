@@ -103,12 +103,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){.toast,.chartbox canvas{transition:none}.locbtn.busy svg{animation:none}}
 .city .lbl{font:400 13px var(--f-body);color:var(--muted)}
-.src{font:400 13px var(--f-body);color:var(--muted)}
+.src{font:400 13px var(--f-body);color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .src a{color:inherit}
 .links{height:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;font:400 13px/18px var(--f-body);white-space:nowrap}
 .x3{font:500 13px var(--f-body);color:var(--muted);text-decoration:none;white-space:nowrap}
 .x3 span:nth-child(1){color:var(--rain)}.x3 span:nth-child(2){color:var(--hot)}.x3 span:nth-child(3){color:var(--ink)}
 .x3:hover span{text-decoration:underline}
+.links .go{display:flex;gap:12px;flex:none}
+.yr{font:500 13px var(--f-body);color:var(--ink);text-decoration:none;white-space:nowrap}
+.yr:hover{text-decoration:underline}
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
@@ -160,7 +163,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   </div>
   <div class="links">
     <div class="src"><span id="tz"></span>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
-    <a class="x3" id="x3" href="three.html"><span>Утро</span>, <span>день</span>, <span>вечер</span></a>
+    <div class="go"><a class="x3" id="x3" href="three.html"><span>Утро</span>, <span>день</span>, <span>вечер</span></a><a class="yr" id="yr" href="years.html">По годам</a></div>
   </div>
 </div>
 
@@ -758,7 +761,7 @@ document.addEventListener('visibilitychange',()=>{
 /* ---------- link with the city, home-screen app ---------- */
 function setUrl(w){ // keep the place in the address so a bookmark or home-screen icon opens this city
   try{const u=new URL(location.href); u.search=''; u.searchParams.set('city',w.name); u.searchParams.set('lat',w.lat); u.searchParams.set('lon',w.lon);
-    history.replaceState(null,'',u); updateManifest(w); $('x3').href='three.html'+u.search}catch(e){}
+    history.replaceState(null,'',u); updateManifest(w); $('x3').href='three.html'+u.search; $('yr').href='years.html'+u.search}catch(e){}
 }
 function updateManifest(w){
   const link=document.querySelector('link[rel="manifest"]'); if(!link) return;
