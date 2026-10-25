@@ -122,7 +122,7 @@ const DN=['день','дня','дней'], NED=['неделю','недели','�
 const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0;
-let center=0, vc=0, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
+let center=0, vc=0, wheelT=0, ovDrag=false, glide=false, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
 let focus=null, wNow=[1,1,1], wFrom=[1,1,1], wTo=[1,1,1], wT0=0;   // band weights; a tapped chart takes the whole height
 try{span=+store.get('x3span')||14}catch(e){}
 
@@ -201,7 +201,7 @@ function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
 function scaleFor(j){ // each chart scales to the days around the view, so day-to-day changes fill its height
-  let lo=1e9,hi=-1e9; const a=Math.max(0,Math.floor(vc-span)), b=Math.min(days.length-1,Math.ceil(vc+span));
+  let lo=1e9,hi=-1e9; const a=Math.max(0,Math.floor(vc-span*1.5)), b=Math.min(days.length-1,Math.ceil(vc+span*1.5)); // a window on each side and a half more, so the scale moves rarely
   for(let i=a;i<=b;i++){const v=days[i].v[j]; if(v==null) continue; if(v<lo)lo=v; if(v>hi)hi=v}
   if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
   return [mn,mx];
@@ -228,19 +228,21 @@ function setFocus(j){
   document.querySelectorAll('.part').forEach(b=>{const on=focus===+b.dataset.j; b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on))});
   $('parts').classList.toggle('focus',focus!=null); ys=null; draw();
 }
+const snapPx=x=>Math.round(x)+.5;
 function draw(){ if(!days.length||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
 let geom=null;
 function render(){
   const [g,W,Ht]=fit($('cv')), ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e'].forEach(k=>C[k]=css('--'+k));
-  // the cursor stays in the middle; moving slowly the chart clicks from day to day, swiped fast it runs smoothly
+  // the cursor stays in the middle; while a finger, the wheel or the strip moves the chart it follows them smoothly
+  // and the dots glide along the lines, and once let go it settles on the nearest day
   const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3;
-  const want=spd>1.2?center:Math.round(center);
-  if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(spd>1.2?.7:.5);
-  if(Math.abs(want-vc)>.002||spd>.05) draw(); else {vc=want; if(!drag) center=vc}
+  const wheeling=performance.now()-wheelT<180, held=drag||ovDrag||glide||wheeling, want=held||spd>1.2?center:Math.round(center);
+  if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(held||spd>1.2?.7:.5);
+  if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; if(!drag) center=vc}
   if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
   // springy band weights
   if(wT0){const k=reduce()?1:Math.min(1,(performance.now()-wT0)/360), e=backOut(k); wNow=wFrom.map((f,i)=>f+(wTo[i]-f)*e); if(k<1) draw(); else {wNow=wTo.slice(); wT0=0}}
-  const viewC=vc+pull/ppd, X=i=>W/2+(i-viewC)*ppd, top=24;
+  const viewC=vc+pull/ppd, X=i=>W/2+(i-viewC)*ppd, top=24, cx=snapPx(W/2); // cursor line and dots on the same pixel as the day lines
   geom={W,Ht,top};
   const tgt=PARTS.map((_,j)=>scaleFor(j)); if(!ys) ys=tgt.map(s=>s.slice());
   let moving=false; ys.forEach((s,j)=>{for(const q of [0,1]){const d=tgt[j][q]-s[q]; if(Math.abs(d)>.02){s[q]+=d*.25;moving=true} else s[q]=tgt[j][q]}}); if(moving) draw();
@@ -251,7 +253,7 @@ function render(){
   const xt=X(todayI)+ppd/2; if(xt<xe){g.fillStyle=C.future;g.fillRect(Math.max(0,xt),0,Math.min(W,xe)-Math.max(0,xt),Ht)}
   g.textBaseline='alphabetic';
   const yearView=ppd<3;
-  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), x=Math.round(X(i))+.5, first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1, jan=first&&dt.getUTCMonth()===0;
+  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), x=snapPx(X(i)), first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1, jan=first&&dt.getUTCMonth()===0;
     if((yearView?first:(mon||first))){g.strokeStyle=first?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(x,top-6);g.lineTo(x,Ht);g.stroke()}
     let label=''; if(first) label=jan&&yearView?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; else if(ppd>=18||(ppd>=6&&mon)) label=String(dt.getUTCDate());
     if(!label) continue;
@@ -283,12 +285,11 @@ function render(){
     g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(W-nw-8,yb+3,nw+8,15);g.globalAlpha=1;g.fillStyle=col;g.fillText(nm,W-nw-4,yb+11);
     // cursor dot on the line
     const cv=valueAt(j,vc,tangents(j,Math.floor(vc)-1,Math.floor(vc)+2));
-    if(cv!=null){g.beginPath();g.arc(W/2,Y(cv),5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=col;g.stroke()}
+    if(cv!=null){g.beginPath();g.arc(cx,Y(cv),5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=col;g.stroke()}
     g.restore();
     if(y0<Ht-4){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(0,Math.round(y0)+.5);g.lineTo(W,Math.round(y0)+.5);g.stroke()}
   });
   // cursor line, behind the dots
-  const dpr=devicePixelRatio||1, cx=(Math.floor(W/2*dpr)+.5)/dpr;
   g.globalCompositeOperation='destination-over';g.strokeStyle=C.fg;g.globalAlpha=.35;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-6);g.lineTo(cx,Ht);g.stroke();g.globalAlpha=1;g.globalCompositeOperation='source-over';
   if(fade){const xr=Math.min(W,X(fade.i)-ppd/2); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
   // the two ends: more archive on its way, the start of the archive, the end of the forecast
@@ -335,7 +336,7 @@ function drawOv(C){
 
 /* ---------- interaction ---------- */
 const box=$('box'), rub=r=>{const W=box.clientWidth;return W*.3*(1-Math.exp(-r/(W*.6)))};
-box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center};vel=0});
+box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);glide=false;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center};vel=0});
 window.addEventListener('pointermove',e=>{if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
@@ -351,17 +352,18 @@ window.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
     for(let j=0;j<3;j++){acc+=Math.max(0,wNow[j])/sumW*(gm.Ht-gm.top-2); if(y<acc){setFocus(focus==null?j:null);return}} return}
   if(d.lock!=='x') return;
   if(pull!==0){if(pull<0) extendBack(); springBack(); return}
-  if(!reduce()){const step=()=>{vel*=.93;if(Math.abs(vel)<.0004){draw();return}const c=clampC(center-vel*16);if(c===center){draw();return}center=c;draw();raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)} else draw()});
+  if(!reduce()){glide=true;const step=()=>{vel*=.93;if(Math.abs(vel)<.0004){glide=false;draw();return}const c=clampC(center-vel*16);if(c===center){glide=false;draw();return}center=c;draw();raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)} else draw()});
 window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull) springBack();draw()}});
-box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center=clampC(center+d/(box.clientWidth/span));draw()},{passive:false});
+box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center=clampC(center+d/(box.clientWidth/span));wheelT=performance.now();draw()},{passive:false});
 box.tabIndex=0;
 box.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center=clampC(Math.round(center)+(e.key==='ArrowLeft'?-1:1));draw();e.preventDefault()}});
 document.querySelectorAll('.part').forEach(b=>b.addEventListener('click',()=>setFocus(+b.dataset.j)));
-const ov=$('ovbox'); let ovDrag=false;
-const ovSet=e=>{const r=ov.getBoundingClientRect();center=clampC(Math.round((e.clientX-r.left)/r.width*days.length-.5));draw()};
+const ov=$('ovbox');
+const ovSet=e=>{const r=ov.getBoundingClientRect();center=clampC((e.clientX-r.left)/r.width*days.length-.5);draw()};
 ov.addEventListener('pointerdown',e=>{if(!days.length)return;ovDrag=true;ov.setPointerCapture?.(e.pointerId);ovSet(e)});
 ov.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
-ov.addEventListener('pointerup',()=>ovDrag=false);
+ov.addEventListener('pointerup',()=>{ovDrag=false;draw()});
+ov.addEventListener('pointercancel',()=>{ovDrag=false;draw()});
 function setSpan(d){span=d;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.d===d)));ys=null;spd=0;lastC=null;draw()}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
 $('today').addEventListener('click',goToday);
