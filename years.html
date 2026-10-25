@@ -71,6 +71,20 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
 .links .go{display:flex;gap:12px}
 .links .go a{color:var(--ink);text-decoration:none}
 .links .go a:hover{text-decoration:underline}
+.mode{position:relative;flex:none;margin-left:auto}
+.mbtn{box-sizing:border-box;height:32px;display:flex;align-items:center;gap:6px;font:500 13px var(--f-body);color:var(--ink);background:var(--paper-2);border:0;border-radius:999px;padding:0 12px;cursor:pointer;white-space:nowrap}
+.mbtn svg{transition:transform .18s ease}.mbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.modes{position:absolute;right:0;bottom:calc(100% + 6px);z-index:15;width:min(280px,calc(100vw - 32px));margin:0;padding:4px;list-style:none;
+  background:var(--paper);border:1px solid var(--grid);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16);transform-origin:100% 100%;animation:pop .16s ease-out}
+.modes li{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px}
+.modes li:hover,.modes li:focus{background:var(--paper-2);outline:none}
+.modes li>div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.modes b{font:500 16px var(--f-body);color:var(--fg)}.modes li[aria-checked="true"] b{color:var(--ink)}
+.modes span{font:400 13px var(--f-body);color:var(--muted)}
+.modes i{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--grid-strong)}
+.modes li[aria-checked="true"] i{background:var(--ink);border-color:var(--ink)}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}}
+@media (prefers-reduced-motion:reduce){.modes{animation:none}.mbtn svg{transition:none}}
 .note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -106,7 +120,12 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
     <button class="ibtn" id="zin" type="button" aria-label="Меньше лет, крупнее" title="Меньше лет, крупнее"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
     <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
-  <div class="foot"><span>Город</span><b id="city">—</b></div>
+  <div class="foot"><span>Город</span><b id="city">—</b>
+    <div class="mode">
+      <button class="mbtn" id="modeBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="modes"><span id="modeName">Температура</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+      <ul class="modes" id="modes" role="listbox" aria-label="Что показывать" hidden></ul>
+    </div>
+  </div>
   <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><div class="go"><a id="back" href="./">График</a><a id="x3" href="three.html">Утро, день, вечер</a></div></div>
 </div>
 
@@ -118,7 +137,7 @@ const MONF=['Январь','Февраль','Март','Апрель','Май','
 const SEAS=['Зима','Весна','Лето','Осень'], SEASL=['зима','весна','лето','осень'];
 const FONT='"Golos Text",system-ui,sans-serif';
 const FIRST=Date.UTC(1940,0,1);  // the Open-Meteo archive (ERA5) starts here
-const RECENT=21;                 // years in the first, quick request; everything older follows in the background
+// the first request reaches back to the 1991–2020 normal; older years load thirty at a time as the view reaches them
 const NORM=[1991,2020];          // the climate normal the years are held against, once the archive reaches back that far
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -150,9 +169,26 @@ async function om(u){
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
 
-/* ---------- data: one mean temperature per day since 1940, plus the forecast ---------- */
+/* ---------- what is shown: the same choice as on the other two pages, kept on this device ---------- */
+// v: Open-Meteo daily mean; k: unit factor; same: closer than this to the normal is "as usual"; sat: this far off paints in full colour;
+// min: the narrowest scale; lo/hi: values that cannot be passed; fake: centre and seasonal swing of the stand-in data
+const dec=v=>(Math.round(v*10)/10).toFixed(1).replace('.',',');
+const METRICS={
+  temp:{v:'temperature_2m_mean',name:'Температура',hint:'°C',unit:'°',num:fmtT,ax:fmtT,mag:a=>Math.round(a)+'°',same:.5,sat:3,min:6,more:'теплее',less:'холоднее',fake:[5,13]},
+  feel:{v:'apparent_temperature_mean',name:'Ощущается',hint:'с учётом ветра и влажности',unit:'°',num:fmtT,ax:fmtT,mag:a=>Math.round(a)+'°',same:.5,sat:3,min:6,more:'теплее',less:'холоднее',fake:[1,16]},
+  wind:{v:'wind_speed_10m_mean',name:'Ветер',hint:'м/с, средний за день',unit:'м/с',num:dec,ax:v=>String(v).replace('.',','),mag:dec,same:.3,sat:1.2,min:1,lo:0,more:'сильнее',less:'слабее',fake:[3.5,-.8]},
+  pres:{v:'pressure_msl_mean',name:'Давление',hint:'мм рт. ст.',unit:'мм',k:0.750062,num:v=>String(Math.round(v)),ax:v=>String(v),mag:a=>String(Math.round(a)),same:1,sat:4,min:6,more:'выше',less:'ниже',fake:[758,2]},
+  hum:{v:'relative_humidity_2m_mean',name:'Влажность',hint:'относительная, %',unit:'%',num:v=>Math.round(v)+'%',ax:v=>v+'%',mag:a=>Math.round(a)+'%',same:2,sat:8,min:10,lo:0,hi:100,more:'влажнее',less:'суше',fake:[76,-10]},
+  cloud:{v:'cloud_cover_mean',name:'Облачность',hint:'доля неба в облаках, %',unit:'%',num:v=>Math.round(v)+'%',ax:v=>v+'%',mag:a=>Math.round(a)+'%',same:3,sat:15,min:15,lo:0,hi:100,more:'облачнее',less:'яснее',fake:[66,-12]},
+};
+const MK=Object.keys(METRICS);
+let metric='temp'; try{const m=localStorage.getItem('metric'); if(METRICS[m]) metric=m}catch(e){}
+const M=()=>METRICS[metric];
+
+/* ---------- data: one daily mean per day since 1940, plus the forecast ---------- */
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
-const pack=j=>({t0:Date.parse(j.daily.time[0]),v:j.daily.temperature_2m_mean,off:j.utc_offset_seconds||0});
+const packOf=(j,k)=>{const m=METRICS[k], a=j.daily[m.v]||[]; return m.k?a.map(v=>v==null?v:Math.round(v*m.k*10)/10):a};
+const pack=(j,k)=>({t0:Date.parse(j.daily.time[0]),v:packOf(j,k),off:j.utc_offset_seconds||0});
 function merge(A,P){ // one run of days covering both; P's days win
   if(!A) return P;
   const t0=Math.min(A.t0,P.t0), end=Math.max(A.t0+A.v.length*DAY,P.t0+P.v.length*DAY), v=new Array(Math.round((end-t0)/DAY)).fill(null);
@@ -161,15 +197,16 @@ function merge(A,P){ // one run of days covering both; P's days win
   return {t0,v,at:P.at??A.at,off:P.off??A.off};
 }
 function use(A,F){ // the archive first; the forecast fills the last days it does not have yet and the days ahead
-  const now=Date.now()+((F||A).off||0)*1000;
+  const now=Date.now()+((F||A).off||0)*1000, fv=F&&F.s&&F.s[metric];
   base=A.t0; vals=A.v.slice();
-  if(F) F.v.forEach((v,i)=>{if(v==null) return; const k=Math.round((F.t0+i*DAY-base)/DAY); if(k>=0) vals[k]=vals[k]??v});
+  if(fv) fv.forEach((v,i)=>{if(v==null) return; const k=Math.round((F.t0+i*DAY-base)/DAY); if(k>=0) vals[k]=vals[k]??v});
   today=dayOf(now); ver++; draw();
 }
 const at=t=>{const k=Math.round((t-base)/DAY); return k>=0&&k<vals.length?vals[k]??null:null};
-function fakeDays(a,b){const v=[]; // a plausible climate, slowly warming, for when nothing loads
-  for(let x=a;x<b;x+=DAY){const doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, k=x/DAY;
-    v.push(Math.round((5+(x-FIRST)/(86*365*DAY)*2.5+13*Math.cos((doy-200)/365*2*Math.PI)+2*Math.sin(k/430)+3*Math.sin(k/9)+2*Math.sin(k/23+1))*10)/10)}
+function fakeDays(a,b){const v=[], [c,sw]=M().fake, m=M(); // a plausible climate, slowly drifting, for when nothing loads
+  for(let x=a;x<b;x+=DAY){const doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, k=x/DAY, n=Math.abs(sw)/4;
+    let y=c+(x-FIRST)/(86*365*DAY)*n+sw*Math.cos((doy-200)/365*2*Math.PI)+n*(.7*Math.sin(k/430)+1.2*Math.sin(k/9)+.8*Math.sin(k/23+1));
+    v.push(Math.round(clamp(y,m.lo??-1e9,m.hi??1e9)*10)/10)}
   return {t0:a,v,off:3*3600,at:Date.now()};
 }
 async function place(){
@@ -178,28 +215,49 @@ async function place(){
   try{const w=JSON.parse(store.get('place')||'null'); if(w) return w}catch(e){}
   return {name:'Москва',lat:55.756,lon:37.617};
 }
+let FP=null, Fcur=null, loadN=0;
 async function load(){
   const w=W0=await place(); $('city').textContent=w.name;
   const qs='?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('back').href='./'+qs; $('x3').href='three.html'+qs;
-  const ka='yrall:'+w.lat+','+w.lon, kf='yrf:'+w.lat+','+w.lon, Y=new Date().getUTCFullYear(), recent=Date.UTC(Y-RECENT,11,1);
-  const arch=(a,b)=>om(`https://archive-api.open-meteo.com/v1/archive?latitude=${w.lat}&longitude=${w.lon}&start_date=${iso(a)}&end_date=${iso(b)}&daily=temperature_2m_mean&timezone=auto`)
-    .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; return pack(j)});
-  const save=A=>store.set(ka,JSON.stringify({t0:A.t0,at:A.at,off:A.off,v:A.v}));
-  let A=null,F=null;
-  try{A=JSON.parse(store.get(ka)||'null')}catch(e){} try{F=JSON.parse(store.get(kf)||'null')}catch(e){}
-  if(A) use(A,F);
-  // a fresh copy needs nothing; an old one only its last two years; none at all — the last twenty years first
+  // the forecast once, for every mode at a time; the archive per mode
+  const kf='yrf2:'+w.lat+','+w.lon; let F0=null; try{F0=JSON.parse(store.get(kf)||'null')}catch(e){}
+  FP=om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&daily=${MK.map(k=>METRICS[k].v).join(',')}&wind_speed_unit=ms&past_days=31&forecast_days=16&timezone=auto`)
+    .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const s={}; MK.forEach(k=>s[k]=packOf(j,k)); const F={t0:Date.parse(j.daily.time[0]),off:j.utc_offset_seconds||0,s}; store.set(kf,JSON.stringify(F)); return F})
+    .catch(()=>F0);
+  await loadMetric(F0);
+}
+// ERA5 alone, not the default blend: since 2017 the blend switches to another model, and its winds and temperatures jump against the years before
+const archive1=(k,a,b)=>om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&models=era5&daily=${METRICS[k].v}&wind_speed_unit=ms&timezone=auto&start_date=${iso(a)}&end_date=${iso(b)}`)
+  .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; return pack(j,k)});
+const archive=(k,a,b,n=2)=>archive1(k,a,b).catch(e=>{if(!n) throw e; return new Promise(r=>setTimeout(r,1500)).then(()=>archive(k,a,b,n-1))}); // a long span of ERA5 can time out on a cold server, and comes through on the next try
+const akey=k=>'yr:'+k+':'+W0.lat+','+W0.lon;
+const save=(k,A)=>store.set(akey(k),JSON.stringify({t0:A.t0,at:A.at,off:A.off,v:A.v}));
+let Acur=null;
+try{Object.keys(localStorage).forEach(k=>{if(/^yr(all|f):/.test(k)) localStorage.removeItem(k)})}catch(e){} // the blended archive of the first version of this page
+async function loadMetric(F0){ // the archive of the mode on screen: from memory, then what is missing
+  const k=metric, my=++loadN, mine=()=>my===loadN&&k===metric;
+  const Y=new Date().getUTCFullYear(), recent=Date.UTC(NORM[0]-1,11,1);
+  let A=null, F=F0??Fcur; try{A=JSON.parse(store.get(akey(k))||'null')}catch(e){}
+  Acur=A; if(A) use(A,F); else {vals=null; draw()}
+  // a fresh copy needs nothing; an old one only its last two years; none at all — everything since the normal began.
+  // Older years come when the view gets near them: the whole archive at once is a heavy request for Open-Meteo
   const need=!A||A.t0>recent?recent:Date.now()-A.at>20*H?Date.UTC(Y-1,0,1):null;
-  const [a,f]=await Promise.allSettled([need==null?Promise.resolve(null):arch(need,Date.now()),
-    om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&daily=temperature_2m_mean&past_days=31&forecast_days=16&timezone=auto`)
-      .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const p=pack(j); store.set(kf,JSON.stringify(p)); return p})]);
-  if(a.value){A=merge(A,{...a.value,at:Date.now()}); save(A)}
-  if(f.value) F=f.value;
-  if(!A){ sample=true; const now=Date.now()+3*H; use(fakeDays(FIRST,dayOf(now)+16*DAY)); $('note').hidden=false; return }
-  use(A,F);
-  if(A.t0>FIRST+7*DAY){ older=true; draw(); // everything before, back to 1940, while the recent years are already on screen
-    try{A=merge(await arch(FIRST,A.t0-DAY),A); save(A)}catch(e){}
-    older=false; use(A,F) }
+  const [a,f]=await Promise.allSettled([need==null?Promise.resolve(null):archive(k,need,Date.now()),FP]);
+  if(!mine()) return;
+  if(a.value){A=merge(A,{...a.value,at:Date.now()}); save(k,A)}
+  if(f.value) F=f.value; Fcur=F;
+  if(!A){ sample=true; const now=Date.now()+3*H; use(Acur=fakeDays(FIRST,dayOf(now)+16*DAY)); $('note').hidden=false; return }
+  sample=false; $('note').hidden=true; Acur=A; use(A,F);
+}
+let noOlder='';
+async function extendBack(){ // thirty more years, back to 1940, when the view reaches the oldest loaded one
+  const k=metric, A=Acur; if(older||sample||!A||!W0||A.t0<=FIRST+7*DAY||noOlder===k) return;
+  older=true; draw();
+  let P=null; try{P=await archive(k,Math.max(FIRST,Date.UTC(new Date(A.t0).getUTCFullYear()-30,0,1)),A.t0-DAY)}catch(e){}
+  older=false;
+  if(k!==metric||A!==Acur) return draw();
+  if(!P){noOlder=k; return draw()} // archive unreachable: stop asking until the mode changes
+  Acur=merge(P,A); save(k,Acur); use(Acur,Fcur);
 }
 
 /* ---------- periods: what one column holds and how it splits into points ---------- */
@@ -254,8 +312,9 @@ function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
 function draw(){ if(drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
+const niceStep=r=>[.2,.5,1,2,5,10,20,25,50,100].find(s=>r/s<=6)||100; // grid lines: no more than six across the scale
 const rgb=h=>{h=h.replace('#',''); if(h.length===3) h=h.replace(/./g,'$&$&'); const n=parseInt(h,16); return [n>>16&255,n>>8&255,n&255]};
-const tint=(C,d,a)=>{if(d==null) return 'rgba(0,0,0,0)'; const c=d>0?C.hotR:C.coldR; return `rgba(${c[0]},${c[1]},${c[2]},${(a*Math.min(1,Math.abs(d)/3)).toFixed(3)})`};
+const tint=(C,d,a)=>{if(d==null) return 'rgba(0,0,0,0)'; const c=d>0?C.hotR:C.coldR; return `rgba(${c[0]},${c[1]},${c[2]},${(a*Math.min(1,Math.abs(d)/M().sat)).toFixed(3)})`};
 // a smooth line that passes exactly through every point (monotone cubic, so it never bulges past the data)
 function mono(vs){const n=vs.length, m=new Array(n).fill(0);
   for(let i=0;i<n;i++){const v=vs[i]; if(v==null) continue; const a=vs[i-1], b=vs[i+1], d0=a==null?null:v-a, d1=b==null?null:b-v;
@@ -280,7 +339,9 @@ function render(){
   tVis=clamp(tVis,Math.min(3,n),n); tOff=clamp(tOff,0,Math.max(0,n-tVis));
   let moving=false;
   if(red||(Math.abs(tVis-vis)<.002&&Math.abs(tOff-off)<.002)){vis=tVis;off=tOff} else {vis+=(tVis-vis)*.28; off+=(tOff-off)*.28; moving=true}
-  const cw=(W-GUT)/vis, L=n-vis-off, X=i=>GUT+(i-L)*cw, i0=Math.max(0,Math.floor(L)), i1=Math.min(n-1,Math.ceil(L+vis));
+  const cw=(W-GUT)/vis, L=n-vis-off;
+  if(L<2&&!older) extendBack();
+  const X=i=>GUT+(i-L)*cw, i0=Math.max(0,Math.floor(L)), i1=Math.min(n-1,Math.ceil(L+vis));
   let si=selY==null?n-1:cs.findIndex(c=>c.y===selY); if(si<0) si=n-1;
   const K=cs[0].pts.length, PX=(i,k)=>X(i)+(k+.5)/K*cw;
   const lines=clamp((cw-14)/12,0,1); // wide columns: a line through the weeks; narrow: one dot per year and a line through the years
@@ -296,7 +357,10 @@ function render(){
   let lo=1e9,hi=-1e9; const take=v=>{if(v==null) return; if(v<lo)lo=v; if(v>hi)hi=v};
   for(let i=i0;i<=i1;i++){ if(lines>.5){tgt[i].forEach(take)} else take(cs[i].mean) }
   if(lines>.5) B.clim.forEach(take); else take(B.avg);
-  if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
+  const mt=M(); if(lo>hi){lo=0;hi=mt.min}
+  { const m=(lo+hi)/2, h=Math.max(hi-lo,mt.min)/2; lo=Math.min(lo,m-h); hi=Math.max(hi,m+h) }
+  const st=niceStep(hi-lo), pad=(hi-lo)*.08; let mn=Math.floor((lo-pad)/st)*st, mx=Math.ceil((hi+pad)/st)*st;
+  if(mt.lo!=null) mn=Math.max(mn,mt.lo); if(mt.hi!=null) mx=Math.min(mx,mt.hi);
   if(!ys||red) ys=[mn,mx]; else ys=ys.map((s,q)=>{const t=[mn,mx][q], d=t-s; if(Math.abs(d)<.02) return t; moving=true; return s+d*.2});
   const [y0,y1]=ys, Y=v=>TOP+10+(y1-v)/(y1-y0||1)*(Ht-TOP-BOT-20);
   geom={GUT,cw,L,n};
@@ -307,9 +371,9 @@ function render(){
   cs.forEach((c,i)=>{if(i<i0||i>i1||today>=c.b||today<c.a) return; const x=X(i)+(today+DAY-c.a)/(c.b-c.a)*cw; g.fillStyle=C.future;g.fillRect(x,TOP,X(i+1)-x,Ht-TOP-BOT)});
   g.restore();
   // temperature lines and the scale in the gutter
-  const step=(y1-y0)>16?5:(y1-y0)>7?2:1; g.font='400 11px '+FONT;g.textBaseline='middle';g.textAlign='right';
+  const step=niceStep(y1-y0); g.font='400 11px '+FONT;g.textBaseline='middle';g.textAlign='right';
   for(let v=Math.ceil(y0/step)*step;v<=y1;v+=step){const y=Math.round(Y(v))+.5; if(y<TOP+4||y>Ht-BOT-4) continue;
-    g.strokeStyle=v===0?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(GUT,y);g.lineTo(W,y);g.stroke();g.fillStyle=C.muted;g.fillText(fmtT(v),GUT-5,y)}
+    g.strokeStyle=v===0?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(GUT,y);g.lineTo(W,y);g.stroke();g.fillStyle=C.muted;g.fillText(mt.ax(+v.toFixed(2)),GUT-5,y)}
   g.textAlign='left';
   g.save(); g.beginPath(); g.rect(GUT,0,W-GUT,Ht); g.clip();
   if(lines>0){ g.globalAlpha=lines; g.strokeStyle=C.grid;g.lineWidth=1;
@@ -349,11 +413,11 @@ function render(){
   // each year's mean over the period along the top, warm or cool
   const inside=(x,w)=>clamp(x,GUT+w/2+2,W-w/2-1); // a label at the edge slides in rather than being cut
   g.textBaseline='alphabetic';g.textAlign='center';g.font='600 11px '+FONT;
-  for(let i=i0;i<=i1;i++){const c=cs[i]; if(c.mean==null||(cw<40&&i!==si)) continue; const t=fmtT(c.mean);
-    g.fillStyle=c.anom==null||Math.abs(c.anom)<.5?C.muted:c.anom>0?C.hot:C.cold; g.fillText(t,inside(X(i)+cw/2,g.measureText(t).width),16)}
+  for(let i=i0;i<=i1;i++){const c=cs[i]; if(c.mean==null||(cw<40&&i!==si)) continue; const t=mt.num(c.mean);
+    g.fillStyle=c.anom==null||Math.abs(c.anom)<mt.same?C.muted:c.anom>0?C.hot:C.cold; g.fillText(t,inside(X(i)+cw/2,g.measureText(t).width),16)}
   // years along the bottom, thinned out when zoomed out; the points' names over the chosen column when they fit
   const every=[1,2,5,10,20].find(k=>k*cw>=36)||20, label=y=>every>1?String(y):cw<40?'’'+yy(y):winterish()?yy(y-1)+'/'+yy(y):String(y);
-  for(let i=i0;i<=i1;i++){const c=cs[i]; if(i!==si&&(c.y%every||(every>1&&Math.abs(X(i)-X(si))<34))) continue;
+  for(let i=i0;i<=i1;i++){const c=cs[i]; if(i!==si&&(c.y%every||(every>1&&Math.abs(X(i)-X(si))<46))) continue;
     g.font=(i===si?'600 ':'400 ')+'11px '+FONT; g.fillStyle=i===si?C.fg:i===n-1?C.ink:C.muted; const t=label(c.y), w=g.measureText(t).width, x=X(i)+cw/2;
     if(i===si||(x-w/2>=GUT&&x+w/2<=W)) g.fillText(t,inside(x,w),Ht-5)}
   const lb=ptLabels(); g.font='400 10px '+FONT; g.fillStyle=C.muted;
@@ -361,21 +425,22 @@ function render(){
   g.textAlign='left';
   g.restore();
   // the far end of the archive and the one still loading
-  if(X(0)>GUT+40){const x0=GUT, x1=X(0); g.save();g.textAlign='center';g.fillStyle=older?C.ink:C.muted;g.font='600 13px '+FONT;
-    g.fillText(older?'Загружаем':'Начало архива',(x0+x1)/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText(older?'годы с 1940':'раньше данных нет',(x0+x1)/2,Ht/2+10);g.restore()}
+  // older years on their way
+  if(older){g.save();g.font='600 11px '+FONT;g.textBaseline='middle';const t='Загружаем годы раньше…', w=g.measureText(t).width;
+    g.fillStyle=C.paper;g.globalAlpha=.9;g.fillRect(GUT+2,TOP+4,w+10,18);g.globalAlpha=1;g.fillStyle=C.ink;g.fillText(t,GUT+7,TOP+13);g.restore()}
   if(moving||Math.abs(vel)>.001) draw();
   readout(B,si,now);
   drawOv(B,C,si);
 }
 function readout(B,si,now){
-  const cs=B.cs, c=cs[si], p=cs[si-1], word=B.isNorm?'к норме':'к среднему';
+  const cs=B.cs, c=cs[si], p=cs[si-1], word=B.isNorm?'к норме':'к среднему', mt=M();
   const vs=(el,x)=>{const e=$(el); if(!x||x.anom==null){e.textContent=' ';e.className='dv';return}
-    const d=x.anom, r=Math.round(d); e.textContent=Math.abs(d)<.5?'как обычно':(r>0?'+':'−')+Math.abs(r)+'° '+word; e.className='dv'+(Math.abs(d)<.5?'':d>0?' warm':' cool')};
+    const d=x.anom, same=Math.abs(d)<mt.same; e.textContent=same?'как обычно':(d>0?'+':'−')+mt.mag(Math.abs(d))+' '+word; e.className='dv'+(same?'':d>0?' warm':' cool')};
   // the big numbers count to their new values
-  const num=(id,v)=>{const h=hdr[id]; if(v==null||h==null||reduce()) hdr[id]=v; else if(Math.abs(v-h)>.05){hdr[id]=h+(v-h)*.2; draw()} else hdr[id]=v; $(id).textContent=fmtT(hdr[id])};
+  const num=(id,v)=>{const h=hdr[id]; if(v==null||h==null||reduce()) hdr[id]=v; else if(Math.abs(v-h)>.05){hdr[id]=h+(v-h)*.2; draw()} else hdr[id]=v; $(id).textContent=hdr[id]==null?'—':mt.num(hdr[id])};
   $('l0').textContent=colName(c.y); num('n0',c.mean); vs('d0',c);
   $('l1').textContent=p?colName(p.y):' '; num('n1',p?p.mean:null); vs('d1',p);
-  const ref=B.ref; $('l2').textContent=B.isNorm?'Норма':ref.length?'Среднее, '+plur(ref.length,['год','года','лет']):'Среднее'; num('n2',B.avg);
+  const ref=B.ref; $('l2').textContent=(B.isNorm?'Норма':ref.length?'Среднее, '+plur(ref.length,['год','года','лет']):'Среднее')+(mt.unit==='°'?'':', '+mt.unit); num('n2',B.avg);
   $('d2').textContent=B.isNorm?NORM[0]+'–'+NORM[1]:ref.length?ref[0].y+'–'+ref[ref.length-1].y:' ';
   let rel;
   if(c.a<=today&&today<c.b) rel='Идёт сейчас'+(c.fc?' · с прогнозом':'');
@@ -465,6 +530,25 @@ $('next').addEventListener('click',()=>stepPeriod(1));
 $('zin').addEventListener('click',()=>zoomTo(tVis/1.6,selAx()));
 $('zout').addEventListener('click',()=>zoomTo(tVis*1.6,selAx()));
 $('today').addEventListener('click',goToday);
+// temperature, feels-like, wind, pressure, humidity, clouds: the same choice as on the other pages
+function useMetric(k){ if(!METRICS[k]||k===metric) return;
+  metric=k; store.set('metric',k); showMetric(); disp=null; ys=null; hdr={}; grow0=0; bKey=''; ovKey='';
+  if(W0) loadMetric(null) }
+function showMetric(){const m=M(); $('modeName').textContent=m.name; $('modeBtn').setAttribute('aria-label','Показывать: '+m.name.toLowerCase()+'. Сменить');
+  [...$('modes').children].forEach(li=>li.setAttribute('aria-checked',String(li.dataset.k===metric)))}
+function modesOpen(on){const ul=$('modes'); ul.hidden=!on; $('modeBtn').setAttribute('aria-expanded',String(on)); if(on) ul.querySelector('[aria-checked="true"]')?.focus()}
+MK.forEach(k=>{const m=METRICS[k], li=document.createElement('li'); li.setAttribute('role','option'); li.dataset.k=k; li.tabIndex=-1;
+  const dot=document.createElement('i'), tx=document.createElement('div'), b=document.createElement('b'), sp=document.createElement('span');
+  b.textContent=m.name; sp.textContent=m.hint; tx.append(b,sp); li.append(dot,tx);
+  li.addEventListener('click',()=>{modesOpen(false); useMetric(k); $('modeBtn').focus()});
+  li.addEventListener('keydown',e=>{const l=[...$('modes').children], i=l.indexOf(li);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault(); l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length].focus()}
+    else if(e.key==='Enter'||e.key===' '){e.preventDefault(); li.click()}
+    else if(e.key==='Escape'){modesOpen(false); $('modeBtn').focus()}});
+  $('modes').append(li)});
+$('modeBtn').addEventListener('click',()=>modesOpen($('modes').hidden));
+document.addEventListener('pointerdown',e=>{if(!$('modes').hidden&&!e.target.closest('.mode')) modesOpen(false)});
+showMetric();
 addEventListener('resize',()=>{ovKey='';draw()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKey='';draw()});
 setMode(['w','m','s'].includes(mode)?mode:'w');

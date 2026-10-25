@@ -11,8 +11,9 @@ const HOSTS = {
 };
 // Кому можно пользоваться зеркалом. Пустой список — всем.
 const ALLOWED_ORIGINS = ['https://tastex.github.io'];
-// Сколько секунд Cloudflare держит ответ у себя: архив не меняется, прогноз обновляется.
-const CACHE = { api: 600, archive: 86400, geo: 86400 };
+// Ответы не кэшируются на стороне Cloudflare: Open-Meteo иногда обрывает длинный ответ на середине
+// («Unexpected error while streaming data»), и такой обрывок потом сутки отдавался бы вместо данных.
+// Страница сама хранит архив в памяти телефона.
 
 export default {
   async fetch(request) {
@@ -32,9 +33,14 @@ export default {
     if (!host || request.method !== 'GET') return new Response('Not found', { status: 404, headers: cors });
 
     const target = `https://${host}/${rest.join('/')}${url.search}`;
-    const upstream = await fetch(target, { cf: { cacheTtl: CACHE[key], cacheEverything: true } });
+    const upstream = await fetch(target, { cf: { cacheTtl: 0 } });
+    const body = await upstream.text();
     const headers = new Headers(upstream.headers);
     for (const [k, v] of Object.entries(cors)) headers.set(k, v);
-    return new Response(upstream.body, { status: upstream.status, headers });
+    headers.set('Cache-Control', 'no-store');
+    // a reply cut off on the way is not JSON: say so plainly instead of passing the scrap on
+    let whole = true; try { JSON.parse(body); } catch (e) { whole = false; }
+    if (!whole) return new Response(JSON.stringify({ error: true, reason: 'upstream reply cut off' }), { status: 502, headers });
+    return new Response(body, { status: upstream.status, headers });
   },
 };
