@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-visual">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Термограф">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f5f7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12161d">
+<title>По годам</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Year by year: the same month (season, year) side by side for the last ten years, current one on the right */
+:root{
+  --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
+  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.10);
+  --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --hot:#c2482a; --cold:#1f74b5; --warn:#8a5a00; --warn-bg:#fff3d6;
+  --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
+  --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* type scale: 40 numbers · 16 text · 13 labels · 11 chart */
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.12);
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.12);
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
+html,body{height:100%}
+html{box-sizing:border-box}
+body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
+.app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
+header{display:grid;grid-template-rows:22px auto 22px;row-gap:2px}
+.rel{text-align:right;font:500 16px/22px var(--f-body);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{font:500 16px/22px var(--f-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row{display:grid;grid-template-columns:repeat(3,1fr);column-gap:12px;min-width:0}
+.part{display:grid;grid-template-rows:18px 44px 18px;min-width:0}
+.part>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lbl{font:500 13px/18px var(--f-body);color:var(--muted)}
+.lbl.sel{color:var(--ink)}.lbl.prev{color:var(--fg)}
+.num{font:700 40px/44px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.num.avg{color:var(--muted)}
+.dv{font:400 13px/18px var(--f-body);color:var(--muted)}
+.dv.warm{color:var(--hot)}.dv.cool{color:var(--cold)}
+.chartbox{flex:1;min-height:240px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:pointer;user-select:none}
+canvas{display:block;width:100%;height:100%}
+.bar{display:flex;align-items:center;gap:6px}
+.bar .sp{flex:1}
+.seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
+.seg button{display:flex;align-items:center;font:500 13px var(--f-body);color:var(--muted);background:transparent;border:0;border-radius:999px;padding:0 9px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.ibtn{box-sizing:border-box;flex:none;width:36px;height:36px;display:grid;place-items:center;border-radius:999px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer;padding:0}
+.ibtn:disabled{opacity:.35;cursor:default}
+button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+/* the bottom block matches the other pages height for height, so it stays put when switching between them */
+.foot{height:32px;display:flex;align-items:center;gap:6px;font:400 13px var(--f-body);color:var(--muted)}
+.foot b{font:500 16px var(--f-body);color:var(--fg)}
+.links{height:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;font:400 13px/18px var(--f-body);color:var(--muted);white-space:nowrap}
+.links a{color:inherit}
+.links .go{display:flex;gap:12px}
+.links .go a{color:var(--ink);text-decoration:none}
+.links .go a:hover{text-decoration:underline}
+.note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
+</style>
+<style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
+:root.ios-app{padding-top:max(env(safe-area-inset-top,0px),54px);padding-bottom:max(env(safe-area-inset-bottom,0px),20px)}</style>
+<script>if(navigator.standalone)document.documentElement.classList.add("ios-app")</script>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="rel" id="rel">&nbsp;</div>
+    <div class="row">
+      <div class="part"><div class="lbl sel" id="l0">&nbsp;</div><div class="num" id="n0">—</div><div class="dv" id="d0">&nbsp;</div></div>
+      <div class="part"><div class="lbl prev" id="l1">&nbsp;</div><div class="num" id="n1">—</div><div class="dv" id="d1">&nbsp;</div></div>
+      <div class="part"><div class="lbl" id="l2">Среднее</div><div class="num avg" id="n2">—</div><div class="dv" id="d2">&nbsp;</div></div>
+    </div>
+    <div class="when" id="date">Загрузка…</div>
+  </header>
+  <div class="note" id="note" hidden>Это пример, а не настоящая погода: страница не смогла загрузить архив. Настоящая — на tastex.github.io/termograf/years.html</div>
+  <div class="chartbox" id="box"><canvas id="cv" aria-label="Один и тот же месяц за десять лет, столбиками: справа нынешний, левее прошлые годы. Нажмите на столбик, чтобы выбрать год, листайте влево и вправо, чтобы сменить месяц"></canvas></div>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Шаг">
+      <button data-m="w">Недели</button><button data-m="m">Месяцы</button><button data-m="s">Сезоны</button>
+    </div>
+    <div class="sp"></div>
+    <button class="ibtn" id="prev" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button class="ibtn" id="next" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+  </div>
+  <div class="foot"><span>Город</span><b id="city">—</b></div>
+  <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><div class="go"><a id="back" href="./">График</a><a id="x3" href="three.html">Утро, день, вечер</a></div></div>
+</div>
+
+<script>
+(()=>{
+const H=3600e3, DAY=24*H, $=id=>document.getElementById(id);
+const MON=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+const MONF=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const SEAS=['Зима','Весна','Лето','Осень'], SEASL=['зима','весна','лето','осень'];
+const FONT='"Golos Text",system-ui,sans-serif';
+const NY=10; // ten years side by side, like the ten-year archive on the other pages
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
+const dayOf=ms=>Math.floor(ms/DAY)*DAY;
+const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
+const NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
+const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let base=0, vals=null, today=0, sample=false, W0=null;
+let mode='w', am=0, selBack=0;     // step: weeks of a month, months of a season, seasons of a year; am — the month in view; selBack — chosen column counted from the right
+let disp=null, dispKey='', ys=null, drawQ=0;
+try{mode=store.get('yrmode')||'w'}catch(e){}
+
+// Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
+// The mirror address goes into MIRROR below, or once through the link: ?mirror=https://name.account.workers.dev
+const MIRROR='https://termograf.tasteofthefloor.workers.dev';
+const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive','geocoding-api.open-meteo.com':'geo'};
+(()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
+const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
+function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
+async function om(u){
+  const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
+  let skip=false; try{skip=sessionStorage.getItem('omDirect')==='no'}catch(e){}
+  if(via&&skip) return fetch(via);
+  try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
+  catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
+}
+
+/* ---------- data: one mean temperature per day, eleven years back plus the forecast ---------- */
+const iso=ms=>new Date(ms).toISOString().slice(0,10);
+const pack=j=>({t0:Date.parse(j.daily.time[0]),v:j.daily.temperature_2m_mean,off:j.utc_offset_seconds||0});
+function use(A,F){ // the archive first; the forecast fills the last days it does not have yet and the days ahead
+  const now=Date.now()+((F||A).off)*1000;
+  base=A.t0; vals=A.v.slice();
+  if(F) F.v.forEach((v,i)=>{if(v==null) return; const k=Math.round((F.t0+i*DAY-base)/DAY); if(k>=0&&vals[k]==null) vals[k]=v});
+  today=dayOf(now); disp=null; draw();
+}
+const at=t=>{const k=Math.round((t-base)/DAY); return k>=0&&k<vals.length?vals[k]??null:null};
+function fakeDays(a,b){const v=[]; // a plausible climate with a few warm and cold years, for when nothing loads
+  for(let x=a;x<b;x+=DAY){const doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, k=x/DAY;
+    v.push(Math.round((6+13*Math.cos((doy-200)/365*2*Math.PI)+2*Math.sin(k/430)+3*Math.sin(k/9)+2*Math.sin(k/23+1))*10)/10)}
+  return {t0:a,v,off:3*3600};
+}
+async function place(){
+  const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon'));
+  if(isFinite(lat)&&isFinite(lon)) return {name:q.get('city')||'Место',lat,lon};
+  try{const w=JSON.parse(store.get('place')||'null'); if(w) return w}catch(e){}
+  return {name:'Москва',lat:55.756,lon:37.617};
+}
+async function load(){
+  const w=W0=await place(); $('city').textContent=w.name;
+  const qs='?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('back').href='./'+qs; $('x3').href='three.html'+qs;
+  const ka='yra:'+w.lat+','+w.lon, kf='yrf:'+w.lat+','+w.lon, start=Date.UTC(new Date().getUTCFullYear()-NY-1,11,1);
+  let A=null,F=null;
+  try{A=JSON.parse(store.get(ka)||'null')}catch(e){} try{F=JSON.parse(store.get(kf)||'null')}catch(e){}
+  if(A&&A.t0<=start) use(A,F); else A=null;
+  const fresh=A&&Date.now()-A.at<20*H;
+  const [a,f]=await Promise.allSettled([
+    fresh?Promise.resolve(A):om(`https://archive-api.open-meteo.com/v1/archive?latitude=${w.lat}&longitude=${w.lon}&start_date=${iso(start)}&end_date=${iso(Date.now())}&daily=temperature_2m_mean&timezone=auto`)
+      .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const p=pack(j); p.at=Date.now(); store.set(ka,JSON.stringify(p)); return p}),
+    om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&daily=temperature_2m_mean&past_days=31&forecast_days=16&timezone=auto`)
+      .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const p=pack(j); store.set(kf,JSON.stringify(p)); return p})]);
+  const nA=a.status==='fulfilled'?a.value:A, nF=f.status==='fulfilled'?f.value:F;
+  if(nA) use(nA,nF);
+  else{ sample=true; const now=Date.now()+3*H; use(fakeDays(start,dayOf(now)+16*DAY)); $('note').hidden=false }
+}
+
+/* ---------- periods: what one column holds and how it splits into points ---------- */
+const seasonOf=m=>Math.floor(((m+1)%12)/3); // 0 winter (Dec–Feb), 1 spring, 2 summer, 3 autumn
+function ranges(y){ // the points of one column of year y, each a [from, to) span of days; Date.UTC rolls month −1 over to December before
+  if(mode==='w'){const a=Date.UTC(y,am,1), e=Date.UTC(y,am+1,1); return [0,7,14,21].map((d,i)=>[a+d*DAY,i<3?a+(d+7)*DAY:e])}
+  if(mode==='m'){const s=seasonOf(am); return [0,1,2].map(i=>[Date.UTC(y,3*s-1+i,1),Date.UTC(y,3*s+i,1)])}
+  return [0,1,2,3].map(s=>[Date.UTC(y,3*s-1,1),Date.UTC(y,3*s+2,1)]);
+}
+function ptLabels(){
+  if(mode==='w'){const last=new Date(Date.UTC(2001,am+1,0)).getUTCDate(); return ['1–7','8–14','15–21','22–'+last]}
+  if(mode==='m'){const s=seasonOf(am); return [0,1,2].map(i=>MON[(3*s-1+i+12)%12])}
+  return SEASL;
+}
+const yy=y=>String(y%100).padStart(2,'0');
+const winterish=()=>mode==='s'||(mode==='m'&&seasonOf(am)===0); // spans December of the year before
+function colName(y){ // header label of a column
+  if(mode==='w') return MONF[am]+' '+y;
+  if(mode==='m') return seasonOf(am)===0?'Зима '+yy(y-1)+'/'+yy(y):SEAS[seasonOf(am)]+' '+y;
+  return 'Год '+yy(y-1)+'/'+yy(y);
+}
+const colShort=(y,narrow)=>narrow?'’'+yy(y):winterish()?yy(y-1)+'/'+yy(y):String(y);
+function periodName(){
+  if(mode==='w') return MONF[am]+' · по неделям';
+  if(mode==='m'){const s=seasonOf(am); return SEAS[s]+', '+MON[(3*s+11)%12]+'–'+MON[(3*s+1)%12]+' · по месяцам'}
+  return 'Год, дек–ноя · по сезонам';
+}
+function build(){
+  let Yr=new Date(today).getUTCFullYear()+1; while(ranges(Yr)[0][0]>today) Yr--; // the newest column has already begun
+  const out=[];
+  for(let y=Yr-NY+1;y<=Yr;y++){
+    const rs=ranges(y), dv=[]; let S=0,N=0,L=0,FC=false;
+    const pts=rs.map(([a,b])=>{let s=0,n=0,fc=false; const len=Math.round((b-a)/DAY);
+      for(let t=a;t<b;t+=DAY){const v=at(t); dv.push(v); if(v==null) continue; s+=v;n++; if(t>today) fc=true}
+      S+=s;N+=n;L+=len;FC=FC||fc; return {v:n>=Math.max(1,len*.3)?s/n:null,fc,part:n<len}});
+    out.push({y,pts,dv,mean:N>=L*.3&&N?S/N:null,full:N===L&&!FC,fc:FC,a:rs[0][0],b:rs[rs.length-1][1]});
+  }
+  while(out.length&&out[0].mean==null) out.shift(); // years before the archive
+  return out;
+}
+
+/* ---------- drawing ---------- */
+function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
+  if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
+  const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
+function draw(){ if(drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
+let geom=null, last=null;
+function render(){
+  const [g,W,Ht]=fit($('cv')), C={}; ['grid','grid-strong','fg','muted','paper','future','ink','ink-soft'].forEach(k=>C[k]=css('--'+k));
+  g.clearRect(0,0,W,Ht);
+  if(!vals){g.textAlign='center';g.fillStyle=C.ink;g.font='600 13px '+FONT;g.fillText('Загружаем',W/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText('архив за десять лет',W/2,Ht/2+10);g.textAlign='left';return}
+  const GUT=30, TOP=22, BOT=20, all=build(), n=Math.min(all.length,Math.max(3,Math.floor((W-GUT)/30))), cs=all.slice(-n);
+  if(!cs.length) return;
+  selBack=Math.min(selBack,n-1); const si=n-1-selBack;
+  const K=cs[0].pts.length, cw=(W-GUT)/n, CX=c=>GUT+c*cw, PX=(c,k)=>CX(c)+(k+.5)/K*cw;
+  // the average of the finished years, point by point
+  const clim=[...Array(K)].map((_,k)=>{let s=0,m=0; cs.forEach(c=>{const p=c.pts[k]; if(p.v!=null&&!p.fc&&!p.part){s+=p.v;m++}}); return m?s/m:null});
+  // the lines glide to the new month; a new step or a new number of columns starts afresh
+  const key=mode+'|'+n, tgt=cs.map(c=>c.pts.map(p=>p.v));
+  let moving=false;
+  if(!disp||key!==dispKey||reduce()){disp=tgt.map(r=>r.slice()); dispKey=key}
+  else disp=disp.map((r,c)=>r.map((v,k)=>{const t=tgt[c][k]; if(t==null||v==null) return t; const d=t-v; if(Math.abs(d)<.02) return t; moving=true; return v+d*.25}));
+  let lo=1e9,hi=-1e9; tgt.concat([clim]).forEach(r=>r.forEach(v=>{if(v==null) return; if(v<lo)lo=v; if(v>hi)hi=v}));
+  if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
+  if(!ys||reduce()) ys=[mn,mx]; else ys=ys.map((s,q)=>{const t=[mn,mx][q], d=t-s; if(Math.abs(d)<.02) return t; moving=true; return s+d*.25});
+  if(moving) draw();
+  const [y0,y1]=ys, Y=v=>TOP+8+(y1-v)/(y1-y0||1)*(Ht-TOP-BOT-16);
+  geom={GUT,cw,n};
+  // chosen column, days still ahead in the current one
+  g.fillStyle=C['ink-soft'];g.fillRect(CX(si),0,cw,Ht);
+  cs.forEach((c,i)=>{if(today>=c.b||today<c.a) return; const x=CX(i)+(today+DAY-c.a)/(c.b-c.a)*cw; if(x<CX(i+1)){g.fillStyle=C.future;g.fillRect(x,TOP,CX(i+1)-x,Ht-TOP-BOT)}});
+  // temperature lines and the scale in the gutter
+  const step=(y1-y0)>16?5:2; g.font='400 11px '+FONT;g.textBaseline='middle';g.textAlign='right';
+  for(let v=Math.ceil(y0/step)*step;v<=y1;v+=step){const y=Math.round(Y(v))+.5; if(y<TOP+4||y>Ht-BOT-4) continue;
+    g.strokeStyle=v===0?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(GUT,y);g.lineTo(W,y);g.stroke();g.fillStyle=C.muted;g.fillText(fmtT(v),GUT-5,y)}
+  g.textAlign='left';
+  g.strokeStyle=C.grid;g.lineWidth=1;
+  for(let i=0;i<=n;i++){const x=Math.round(CX(i))+.5; g.beginPath();g.moveTo(x,TOP);g.lineTo(x,Ht-BOT);g.stroke()}
+  // the average of all finished years, dashed, repeated in every column so each year reads against it
+  g.save();g.setLineDash([3,3]);g.strokeStyle=C.muted;g.globalAlpha=.75;g.lineWidth=1.2;
+  cs.forEach((c,i)=>{g.beginPath(); let on=false; clim.forEach((v,k)=>{if(v==null){on=false;return} const x=PX(i,k),y=Y(v); if(on) g.lineTo(x,y); else {g.moveTo(K===1?x-cw/3:x,y); on=true}}); g.stroke()});
+  g.restore();
+  // each year: a line through its weeks (months, seasons); unfinished points and the forecast are hollow and lighter
+  const r=Math.max(2,Math.min(3.4,cw/K*.28));
+  cs.forEach((c,i)=>{const d=disp[i], soft=k=>c.pts[k].fc||c.pts[k].part;
+    g.lineWidth=i===si?2.4:1.8;g.lineJoin='round';g.lineCap='round';g.strokeStyle=C.ink;
+    for(let k=0;k<K-1;k++){if(d[k]==null||d[k+1]==null) continue; g.globalAlpha=soft(k)||soft(k+1)?.45:1; g.beginPath();g.moveTo(PX(i,k),Y(d[k]));g.lineTo(PX(i,k+1),Y(d[k+1]));g.stroke()}
+    g.globalAlpha=1;
+    d.forEach((v,k)=>{if(v==null) return; g.beginPath();g.arc(PX(i,k),Y(v),r,0,7);
+      if(soft(k)){g.fillStyle=C.paper;g.fill();g.lineWidth=1.4;g.stroke()} else {g.fillStyle=C.ink;g.fill()}});
+  });
+  // years along the bottom, the points' names over the chosen column when they fit
+  g.textBaseline='alphabetic';g.textAlign='center';
+  const narrow=cw<40;
+  cs.forEach((c,i)=>{g.font=(i===si?'600 ':'400 ')+'11px '+FONT; g.fillStyle=i===si?C.fg:i===n-1?C.ink:C.muted; g.fillText(colShort(c.y,narrow),CX(i)+cw/2,Ht-5)});
+  const lb=ptLabels(); g.font='400 11px '+FONT; g.fillStyle=C.muted;
+  if(lb.every(t=>g.measureText(t).width<=cw/K-4)) lb.forEach((t,k)=>g.fillText(t,PX(si,k),15));
+  else if(K===4&&mode==='w'&&cw>=24){g.fillText('4 нед.',CX(si)+cw/2,15)}
+  g.textAlign='left';
+  readout(cs,si);
+  last=cs;
+}
+function readout(cs,si){
+  const c=cs[si], p=cs[si-1], full=cs.filter(x=>x.full), avg=full.length?full.reduce((s,x)=>s+x.mean,0)/full.length:null;
+  const same=x=>{ if(x.full) return avg; // an unfinished period is held against the same days of the finished years
+    let s=0,m=0; full.forEach(f=>{let a=0,k=0; x.dv.forEach((v,o)=>{if(v!=null&&f.dv[o]!=null){a+=f.dv[o];k++}}); if(k){s+=a/k;m++}}); return m?s/m:null};
+  const vs=(el,x)=>{const e=$(el), ref=x&&x.mean!=null&&avg!=null?same(x):null; if(ref==null){e.textContent=' ';e.className='dv';return}
+    const d=x.mean-ref, r=Math.round(d); e.textContent=Math.abs(d)<.5?'как обычно':(r>0?'+':'−')+Math.abs(r)+'° к среднему'; e.className='dv'+(Math.abs(d)<.5?'':d>0?' warm':' cool')};
+  $('l0').textContent=colName(c.y); $('n0').textContent=fmtT(c.mean); vs('d0',c);
+  $('l1').textContent=p?colName(p.y):' '; $('n1').textContent=p?fmtT(p.mean):'—'; vs('d1',p);
+  $('l2').textContent=full.length?'Среднее, '+plur(full.length,['год','года','лет']):'Среднее'; $('n2').textContent=fmtT(avg);
+  $('d2').textContent=full.length?colShort(full[0].y)+' – '+colShort(full[full.length-1].y):' ';
+  let rel;
+  if(c.a<=today&&today<c.b) rel='Идёт сейчас'+(c.fc?' · с прогнозом':'');
+  else{const ad=Math.round((today-c.b)/DAY)+1, n=Math.round(ad/365.25);
+    rel=ad<60?plur(Math.max(1,Math.round(ad/7)),NED)+' назад':ad<351?plur(Math.round(ad/30.4),MES)+' назад':n===1?'Год назад':n+(n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?' года назад':' лет назад')}
+  $('rel').textContent=rel[0].toUpperCase()+rel.slice(1);
+  $('date').textContent=periodName();
+  const cur=am===new Date(today).getUTCMonth()||(mode==='m'&&seasonOf(am)===seasonOf(new Date(today).getUTCMonth()))||mode==='s';
+  $('today').disabled=cur&&selBack===0;
+}
+
+/* ---------- interaction ---------- */
+const STEP={w:['Предыдущий месяц','Следующий месяц'],m:['Предыдущий сезон','Следующий сезон'],s:['','']};
+function stepPeriod(d){ if(mode==='s') return; am=(am+d*(mode==='m'?3:1)+120)%12; if(mode==='m') am=(seasonOf(am)*3+12)%12; draw() } // a season keeps its middle month
+function setMode(m){
+  mode=m; store.set('yrmode',m); if(m==='m') am=(seasonOf(am)*3)%12;
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.m===m)));
+  ['prev','next'].forEach((id,i)=>{const b=$(id); b.disabled=m==='s'; b.setAttribute('aria-label',STEP[m][i]||'—'); b.title=STEP[m][i]});
+  ys=null; draw();
+}
+function goToday(){ am=new Date(today||Date.now()).getUTCMonth(); if(mode==='m') am=(seasonOf(am)*3)%12; selBack=0; draw() }
+const box=$('box'); let tap=null;
+box.addEventListener('pointerdown',e=>{tap={x:e.clientX,y:e.clientY}});
+box.addEventListener('pointerup',e=>{if(!tap||!geom) return; const dx=e.clientX-tap.x, dy=e.clientY-tap.y; tap=null;
+  if(Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)){stepPeriod(dx<0?1:-1);return} // swipe: the next or the previous month
+  if(Math.abs(dx)<8&&Math.abs(dy)<8){const r=box.getBoundingClientRect(), i=Math.floor((e.clientX-r.left-geom.GUT)/geom.cw);
+    if(i>=0&&i<geom.n){selBack=geom.n-1-i; draw()}}});
+box.addEventListener('pointercancel',()=>tap=null);
+box.tabIndex=0;
+box.addEventListener('keydown',e=>{ if(!geom) return;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){selBack=Math.max(0,Math.min(geom.n-1,selBack+(e.key==='ArrowLeft'?1:-1)));draw();e.preventDefault()}
+  if(e.key==='PageUp'||e.key==='PageDown'){stepPeriod(e.key==='PageUp'?-1:1);e.preventDefault()}});
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.m)));
+$('prev').addEventListener('click',()=>stepPeriod(-1));
+$('next').addEventListener('click',()=>stepPeriod(1));
+$('today').addEventListener('click',goToday);
+addEventListener('resize',draw);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
+am=new Date(Date.now()).getMonth();
+setMode(['w','m','s'].includes(mode)?mode:'w');
+load().then(goToday);
+})();
+</script>
+</body>
+</html>

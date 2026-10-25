@@ -72,6 +72,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 .links a{color:inherit}
 .links a.back{color:var(--ink);text-decoration:none}
 .links a.back:hover{text-decoration:underline}
+.links .go{display:flex;gap:12px}
 .note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 @media (prefers-reduced-motion:reduce){.part{transition:none}}
 </style>
@@ -102,7 +103,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
   <div class="foot"><span>Город</span><b id="city">—</b></div>
-  <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><a class="back" id="back" href="./">Обычный график</a></div>
+  <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><div class="go"><a class="back" id="back" href="./">Обычный график</a><a class="back" id="yr" href="years.html">По годам</a></div></div>
 </div>
 
 <script>
@@ -167,7 +168,7 @@ async function place(){
 const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
 async function load(){
   const w=W0=await place(); $('city').textContent=w.name;
-  $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon;
+  $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('yr').href='years.html'+new URL($('back').href).search;
   const key='x3:'+w.lat+','+w.lon, use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),j.hourly.temperature_2m,now),now)};
   let shown=false;
   try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}}catch(e){}
