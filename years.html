@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
 <style>
-/* Year by year: the same month (season, year) side by side for the last ten years, current one on the right */
+/* Year by year: the same month (season, year) side by side for every year of the archive, the current one on the right */
 :root{
   --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
   --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.10);
@@ -38,7 +38,10 @@ body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
 header{display:grid;grid-template-rows:22px auto 22px;row-gap:2px}
 .rel{text-align:right;font:500 16px/22px var(--f-body);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.when{font:500 16px/22px var(--f-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{display:flex;align-items:center;gap:2px;min-width:0;margin-left:-6px}
+.when span{font:500 16px/22px var(--f-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.arr{flex:none;width:26px;height:22px;display:grid;place-items:center;border:0;padding:0;background:transparent;color:var(--ink);cursor:pointer;border-radius:6px}
+.arr:disabled{visibility:hidden}
 .row{display:grid;grid-template-columns:repeat(3,1fr);column-gap:12px;min-width:0}
 .part{display:grid;grid-template-rows:18px 44px 18px;min-width:0}
 .part>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -48,8 +51,10 @@ header{display:grid;grid-template-rows:22px auto 22px;row-gap:2px}
 .num.avg{color:var(--muted)}
 .dv{font:400 13px/18px var(--f-body);color:var(--muted)}
 .dv.warm{color:var(--hot)}.dv.cool{color:var(--cold)}
-.chartbox{flex:1;min-height:240px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:pointer;user-select:none}
+.chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);touch-action:pan-y;cursor:grab;user-select:none}
+.chartbox:active{cursor:grabbing}
 canvas{display:block;width:100%;height:100%}
+.ovbox{height:34px;position:relative;touch-action:none;cursor:pointer}
 .bar{display:flex;align-items:center;gap:6px}
 .bar .sp{flex:1}
 .seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
@@ -81,19 +86,24 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
     <div class="row">
       <div class="part"><div class="lbl sel" id="l0">&nbsp;</div><div class="num" id="n0">—</div><div class="dv" id="d0">&nbsp;</div></div>
       <div class="part"><div class="lbl prev" id="l1">&nbsp;</div><div class="num" id="n1">—</div><div class="dv" id="d1">&nbsp;</div></div>
-      <div class="part"><div class="lbl" id="l2">Среднее</div><div class="num avg" id="n2">—</div><div class="dv" id="d2">&nbsp;</div></div>
+      <div class="part"><div class="lbl" id="l2">Норма</div><div class="num avg" id="n2">—</div><div class="dv" id="d2">&nbsp;</div></div>
     </div>
-    <div class="when" id="date">Загрузка…</div>
+    <div class="when">
+      <button class="arr" id="prev" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <span id="date">Загрузка…</span>
+      <button class="arr" id="next" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
   </header>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: страница не смогла загрузить архив. Настоящая — на tastex.github.io/termograf/years.html</div>
-  <div class="chartbox" id="box"><canvas id="cv" aria-label="Один и тот же месяц за десять лет, столбиками: справа нынешний, левее прошлые годы. Нажмите на столбик, чтобы выбрать год, листайте влево и вправо, чтобы сменить месяц"></canvas></div>
+  <div class="chartbox" id="box"><canvas id="cv" aria-label="Один и тот же месяц по годам, столбиками: справа нынешний, левее прошлые годы. Тяните влево и вправо, чтобы листать годы, сведите или разведите пальцы, чтобы уместить больше или меньше лет, нажмите на столбик, чтобы выбрать год"></canvas></div>
+  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Все годы архива: цвет — теплее или холоднее нормы, рамка — то, что видно на графике"></canvas></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Шаг">
       <button data-m="w">Недели</button><button data-m="m">Месяцы</button><button data-m="s">Сезоны</button>
     </div>
     <div class="sp"></div>
-    <button class="ibtn" id="prev" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-    <button class="ibtn" id="next" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="ibtn" id="zout" type="button" aria-label="Больше лет на экране" title="Больше лет на экране"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+    <button class="ibtn" id="zin" type="button" aria-label="Меньше лет, крупнее" title="Меньше лет, крупнее"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
     <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
   <div class="foot"><span>Город</span><b id="city">—</b></div>
@@ -107,7 +117,9 @@ const MON=['янв','фев','мар','апр','май','июн','июл','ав�
 const MONF=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const SEAS=['Зима','Весна','Лето','Осень'], SEASL=['зима','весна','лето','осень'];
 const FONT='"Golos Text",system-ui,sans-serif';
-const NY=10; // ten years side by side, like the ten-year archive on the other pages
+const FIRST=Date.UTC(1940,0,1);  // the Open-Meteo archive (ERA5) starts here
+const RECENT=21;                 // years in the first, quick request; everything older follows in the background
+const NORM=[1991,2020];          // the climate normal the years are held against, once the archive reaches back that far
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
@@ -115,10 +127,12 @@ const dayOf=ms=>Math.floor(ms/DAY)*DAY;
 const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
 const NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
 const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), ease=k=>1-Math.pow(1-k,3);
 
-let base=0, vals=null, today=0, sample=false, W0=null;
-let mode='w', am=0, selBack=0;     // step: weeks of a month, months of a season, seasons of a year; am — the month in view; selBack — chosen column counted from the right
-let disp=null, dispKey='', ys=null, drawQ=0;
+let base=0, vals=null, today=0, sample=false, W0=null, ver=0, older=false;
+let mode='w', am=new Date().getMonth(), selY=null;  // step: weeks of a month, months of a season, seasons of a year; am — the month in view; selY — the chosen year (null: the newest)
+let vis=0, off=0, tVis=0, tOff=0, vel=0;           // columns across the screen and how many of the newest are scrolled past on the right; t* — where they glide to
+let disp=null, dispKey='', ys=null, drawQ=0, grow0=0, hdr={};
 try{mode=store.get('yrmode')||'w'}catch(e){}
 
 // Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
@@ -136,20 +150,27 @@ async function om(u){
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
 
-/* ---------- data: one mean temperature per day, eleven years back plus the forecast ---------- */
+/* ---------- data: one mean temperature per day since 1940, plus the forecast ---------- */
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 const pack=j=>({t0:Date.parse(j.daily.time[0]),v:j.daily.temperature_2m_mean,off:j.utc_offset_seconds||0});
+function merge(A,P){ // one run of days covering both; P's days win
+  if(!A) return P;
+  const t0=Math.min(A.t0,P.t0), end=Math.max(A.t0+A.v.length*DAY,P.t0+P.v.length*DAY), v=new Array(Math.round((end-t0)/DAY)).fill(null);
+  const put=(S,all)=>{const k0=Math.round((S.t0-t0)/DAY); S.v.forEach((x,i)=>{if(all||x!=null) v[k0+i]=x})};
+  put(A,true); put(P,false);
+  return {t0,v,at:P.at??A.at,off:P.off??A.off};
+}
 function use(A,F){ // the archive first; the forecast fills the last days it does not have yet and the days ahead
-  const now=Date.now()+((F||A).off)*1000;
+  const now=Date.now()+((F||A).off||0)*1000;
   base=A.t0; vals=A.v.slice();
-  if(F) F.v.forEach((v,i)=>{if(v==null) return; const k=Math.round((F.t0+i*DAY-base)/DAY); if(k>=0&&vals[k]==null) vals[k]=v});
-  today=dayOf(now); disp=null; draw();
+  if(F) F.v.forEach((v,i)=>{if(v==null) return; const k=Math.round((F.t0+i*DAY-base)/DAY); if(k>=0) vals[k]=vals[k]??v});
+  today=dayOf(now); ver++; draw();
 }
 const at=t=>{const k=Math.round((t-base)/DAY); return k>=0&&k<vals.length?vals[k]??null:null};
-function fakeDays(a,b){const v=[]; // a plausible climate with a few warm and cold years, for when nothing loads
+function fakeDays(a,b){const v=[]; // a plausible climate, slowly warming, for when nothing loads
   for(let x=a;x<b;x+=DAY){const doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, k=x/DAY;
-    v.push(Math.round((6+13*Math.cos((doy-200)/365*2*Math.PI)+2*Math.sin(k/430)+3*Math.sin(k/9)+2*Math.sin(k/23+1))*10)/10)}
-  return {t0:a,v,off:3*3600};
+    v.push(Math.round((5+(x-FIRST)/(86*365*DAY)*2.5+13*Math.cos((doy-200)/365*2*Math.PI)+2*Math.sin(k/430)+3*Math.sin(k/9)+2*Math.sin(k/23+1))*10)/10)}
+  return {t0:a,v,off:3*3600,at:Date.now()};
 }
 async function place(){
   const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon'));
@@ -160,19 +181,25 @@ async function place(){
 async function load(){
   const w=W0=await place(); $('city').textContent=w.name;
   const qs='?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('back').href='./'+qs; $('x3').href='three.html'+qs;
-  const ka='yra:'+w.lat+','+w.lon, kf='yrf:'+w.lat+','+w.lon, start=Date.UTC(new Date().getUTCFullYear()-NY-1,11,1);
+  const ka='yrall:'+w.lat+','+w.lon, kf='yrf:'+w.lat+','+w.lon, Y=new Date().getUTCFullYear(), recent=Date.UTC(Y-RECENT,11,1);
+  const arch=(a,b)=>om(`https://archive-api.open-meteo.com/v1/archive?latitude=${w.lat}&longitude=${w.lon}&start_date=${iso(a)}&end_date=${iso(b)}&daily=temperature_2m_mean&timezone=auto`)
+    .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; return pack(j)});
+  const save=A=>store.set(ka,JSON.stringify({t0:A.t0,at:A.at,off:A.off,v:A.v}));
   let A=null,F=null;
   try{A=JSON.parse(store.get(ka)||'null')}catch(e){} try{F=JSON.parse(store.get(kf)||'null')}catch(e){}
-  if(A&&A.t0<=start) use(A,F); else A=null;
-  const fresh=A&&Date.now()-A.at<20*H;
-  const [a,f]=await Promise.allSettled([
-    fresh?Promise.resolve(A):om(`https://archive-api.open-meteo.com/v1/archive?latitude=${w.lat}&longitude=${w.lon}&start_date=${iso(start)}&end_date=${iso(Date.now())}&daily=temperature_2m_mean&timezone=auto`)
-      .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const p=pack(j); p.at=Date.now(); store.set(ka,JSON.stringify(p)); return p}),
+  if(A) use(A,F);
+  // a fresh copy needs nothing; an old one only its last two years; none at all — the last twenty years first
+  const need=!A||A.t0>recent?recent:Date.now()-A.at>20*H?Date.UTC(Y-1,0,1):null;
+  const [a,f]=await Promise.allSettled([need==null?Promise.resolve(null):arch(need,Date.now()),
     om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&daily=temperature_2m_mean&past_days=31&forecast_days=16&timezone=auto`)
       .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const p=pack(j); store.set(kf,JSON.stringify(p)); return p})]);
-  const nA=a.status==='fulfilled'?a.value:A, nF=f.status==='fulfilled'?f.value:F;
-  if(nA) use(nA,nF);
-  else{ sample=true; const now=Date.now()+3*H; use(fakeDays(start,dayOf(now)+16*DAY)); $('note').hidden=false }
+  if(a.value){A=merge(A,{...a.value,at:Date.now()}); save(A)}
+  if(f.value) F=f.value;
+  if(!A){ sample=true; const now=Date.now()+3*H; use(fakeDays(FIRST,dayOf(now)+16*DAY)); $('note').hidden=false; return }
+  use(A,F);
+  if(A.t0>FIRST+7*DAY){ older=true; draw(); // everything before, back to 1940, while the recent years are already on screen
+    try{A=merge(await arch(FIRST,A.t0-DAY),A); save(A)}catch(e){}
+    older=false; use(A,F) }
 }
 
 /* ---------- periods: what one column holds and how it splits into points ---------- */
@@ -194,24 +221,32 @@ function colName(y){ // header label of a column
   if(mode==='m') return seasonOf(am)===0?'Зима '+yy(y-1)+'/'+yy(y):SEAS[seasonOf(am)]+' '+y;
   return 'Год '+yy(y-1)+'/'+yy(y);
 }
-const colShort=(y,narrow)=>narrow?'’'+yy(y):winterish()?yy(y-1)+'/'+yy(y):String(y);
 function periodName(){
   if(mode==='w') return MONF[am]+' · по неделям';
   if(mode==='m'){const s=seasonOf(am); return SEAS[s]+', '+MON[(3*s+11)%12]+'–'+MON[(3*s+1)%12]+' · по месяцам'}
   return 'Год, дек–ноя · по сезонам';
 }
-function build(){
+let bKey='', bOut=null;
+function build(){ // every year's column, its points, its mean, and how far it is from the normal
+  const key=[mode,am,today,ver].join('|'); if(key===bKey) return bOut;
   let Yr=new Date(today).getUTCFullYear()+1; while(ranges(Yr)[0][0]>today) Yr--; // the newest column has already begun
-  const out=[];
-  for(let y=Yr-NY+1;y<=Yr;y++){
+  const cs=[];
+  for(let y=new Date(base).getUTCFullYear();y<=Yr;y++){
     const rs=ranges(y), dv=[]; let S=0,N=0,L=0,FC=false;
     const pts=rs.map(([a,b])=>{let s=0,n=0,fc=false; const len=Math.round((b-a)/DAY);
       for(let t=a;t<b;t+=DAY){const v=at(t); dv.push(v); if(v==null) continue; s+=v;n++; if(t>today) fc=true}
       S+=s;N+=n;L+=len;FC=FC||fc; return {v:n>=Math.max(1,len*.3)?s/n:null,fc,part:n<len}});
-    out.push({y,pts,dv,mean:N>=L*.3&&N?S/N:null,full:N===L&&!FC,fc:FC,a:rs[0][0],b:rs[rs.length-1][1]});
+    cs.push({y,pts,dv,mean:N>=L*.3&&N?S/N:null,full:N===L&&!FC,fc:FC,a:rs[0][0],b:rs[rs.length-1][1]});
   }
-  while(out.length&&out[0].mean==null) out.shift(); // years before the archive
-  return out;
+  while(cs.length&&cs[0].mean==null) cs.shift(); // years before the archive
+  // the normal: 1991–2020 when the archive has it, otherwise every finished year there is
+  const full=cs.filter(c=>c.full), nrm=full.filter(c=>c.y>=NORM[0]&&c.y<=NORM[1]), ref=nrm.length>=20?nrm:full, isNorm=ref===nrm;
+  const avg=ref.length?ref.reduce((s,c)=>s+c.mean,0)/ref.length:null, K=cs[0]?cs[0].pts.length:0;
+  const clim=[...Array(K)].map((_,k)=>{let s=0,m=0; ref.forEach(c=>{const v=c.pts[k].v; if(v!=null){s+=v;m++}}); return m?s/m:null});
+  const same=x=>{ if(x.full) return avg; // an unfinished period is held against the same days of the reference years
+    let s=0,m=0; ref.forEach(f=>{let a=0,k=0; x.dv.forEach((v,o)=>{if(v!=null&&f.dv[o]!=null){a+=f.dv[o];k++}}); if(k){s+=a/k;m++}}); return m?s/m:null};
+  cs.forEach(c=>{const r=c.mean==null||avg==null?null:same(c); c.anom=r==null?null:c.mean-r});
+  bKey=key; return bOut={cs,avg,clim,ref,isNorm};
 }
 
 /* ---------- drawing ---------- */
@@ -219,110 +254,219 @@ function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
 function draw(){ if(drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
-let geom=null, last=null;
+const rgb=h=>{h=h.replace('#',''); if(h.length===3) h=h.replace(/./g,'$&$&'); const n=parseInt(h,16); return [n>>16&255,n>>8&255,n&255]};
+const tint=(C,d,a)=>{if(d==null) return 'rgba(0,0,0,0)'; const c=d>0?C.hotR:C.coldR; return `rgba(${c[0]},${c[1]},${c[2]},${(a*Math.min(1,Math.abs(d)/3)).toFixed(3)})`};
+// a smooth line that passes exactly through every point (monotone cubic, so it never bulges past the data)
+function mono(vs){const n=vs.length, m=new Array(n).fill(0);
+  for(let i=0;i<n;i++){const v=vs[i]; if(v==null) continue; const a=vs[i-1], b=vs[i+1], d0=a==null?null:v-a, d1=b==null?null:b-v;
+    m[i]=d0==null?(d1??0):d1==null?d0:(d0*d1<=0?0:(d0+d1)/2)}
+  for(let i=0;i<n-1;i++){const v=vs[i], b=vs[i+1]; if(v==null||b==null) continue; const d=b-v;
+    if(d===0){m[i]=0;m[i+1]=0;continue} const al=m[i]/d, be=m[i+1]/d, s=al*al+be*be; if(s>9){const t=3/Math.sqrt(s); m[i]=t*al*d; m[i+1]=t*be*d}}
+  return m}
+function herm(vs,m,t){const i=Math.floor(t), u=t-i, a=vs[i], b=vs[i+1]; if(u<1e-9) return a??null; if(a==null||b==null) return null;
+  return (2*u*u*u-3*u*u+1)*a+(u*u*u-2*u*u+u)*m[i]+(-2*u*u*u+3*u*u)*b+(u*u*u-u*u)*m[i+1]}
+function spline(g,vs,m,X,Y,i0,i1){ // one bezier path through vs[i0..i1]
+  g.moveTo(X(i0),Y(vs[i0])); for(let k=i0;k<i1;k++){const a=vs[k],b=vs[k+1],dx=X(k+1)-X(k); g.bezierCurveTo(X(k)+dx/3,Y(a+m[k]/3),X(k+1)-dx/3,Y(b-m[k+1]/3),X(k+1),Y(b))}}
+let geom=null;
 function render(){
-  const [g,W,Ht]=fit($('cv')), C={}; ['grid','grid-strong','fg','muted','paper','future','ink','ink-soft'].forEach(k=>C[k]=css('--'+k));
+  const [g,W,Ht]=fit($('cv')), C={}; ['grid','grid-strong','fg','muted','paper','future','ink','ink-soft','hot','cold'].forEach(k=>C[k]=css('--'+k));
+  C.hotR=rgb(C.hot); C.coldR=rgb(C.cold);
   g.clearRect(0,0,W,Ht);
-  if(!vals){g.textAlign='center';g.fillStyle=C.ink;g.font='600 13px '+FONT;g.fillText('Загружаем',W/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText('архив за десять лет',W/2,Ht/2+10);g.textAlign='left';return}
-  const GUT=30, TOP=22, BOT=20, all=build(), n=Math.min(all.length,Math.max(3,Math.floor((W-GUT)/30))), cs=all.slice(-n);
-  if(!cs.length) return;
-  selBack=Math.min(selBack,n-1); const si=n-1-selBack;
-  const K=cs[0].pts.length, cw=(W-GUT)/n, CX=c=>GUT+c*cw, PX=(c,k)=>CX(c)+(k+.5)/K*cw;
-  // the average of the finished years, point by point
-  const clim=[...Array(K)].map((_,k)=>{let s=0,m=0; cs.forEach(c=>{const p=c.pts[k]; if(p.v!=null&&!p.fc&&!p.part){s+=p.v;m++}}); return m?s/m:null});
-  // the lines glide to the new month; a new step or a new number of columns starts afresh
-  const key=mode+'|'+n, tgt=cs.map(c=>c.pts.map(p=>p.v));
+  if(!vals){g.textAlign='center';g.fillStyle=C.ink;g.font='600 13px '+FONT;g.fillText('Загружаем',W/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText('архив по годам',W/2,Ht/2+10);g.textAlign='left';return}
+  const B=build(), cs=B.cs, n=cs.length; if(!n) return;
+  const GUT=30, TOP=24, BOT=34, now=performance.now(), red=reduce();
+  // zoom and scroll glide to their targets; a drag or a pinch sets them directly
+  if(!vis){vis=tVis=Math.min(n,clamp(Math.floor((W-GUT)/32),4,20)); off=tOff=0}
+  tVis=clamp(tVis,Math.min(3,n),n); tOff=clamp(tOff,0,Math.max(0,n-tVis));
   let moving=false;
-  if(!disp||key!==dispKey||reduce()){disp=tgt.map(r=>r.slice()); dispKey=key}
-  else disp=disp.map((r,c)=>r.map((v,k)=>{const t=tgt[c][k]; if(t==null||v==null) return t; const d=t-v; if(Math.abs(d)<.02) return t; moving=true; return v+d*.25}));
-  let lo=1e9,hi=-1e9; tgt.concat([clim]).forEach(r=>r.forEach(v=>{if(v==null) return; if(v<lo)lo=v; if(v>hi)hi=v}));
+  if(red||(Math.abs(tVis-vis)<.002&&Math.abs(tOff-off)<.002)){vis=tVis;off=tOff} else {vis+=(tVis-vis)*.28; off+=(tOff-off)*.28; moving=true}
+  const cw=(W-GUT)/vis, L=n-vis-off, X=i=>GUT+(i-L)*cw, i0=Math.max(0,Math.floor(L)), i1=Math.min(n-1,Math.ceil(L+vis));
+  let si=selY==null?n-1:cs.findIndex(c=>c.y===selY); if(si<0) si=n-1;
+  const K=cs[0].pts.length, PX=(i,k)=>X(i)+(k+.5)/K*cw;
+  const lines=clamp((cw-14)/12,0,1); // wide columns: a line through the weeks; narrow: one dot per year and a line through the years
+  // the lines glide to a new month; a new step or a new set of years starts afresh
+  const key=mode+'|'+n+'|'+cs[0].y, tgt=cs.map(c=>c.pts.map(p=>p.v));
+  if(!disp||key!==dispKey||red){disp=tgt.map(r=>r.slice()); dispKey=key}
+  else for(let i=i0;i<=i1;i++) disp[i]=disp[i].map((v,k)=>{const t=tgt[i][k]; if(t==null||v==null) return t; const d=t-v; if(Math.abs(d)<.02) return t; moving=true; return v+d*.22});
+  // on arrival the years rise out of the normal one after another, the newest first
+  if(!grow0) grow0=red?1:now;
+  const gr=i=>{if(grow0===1) return 1; const k=clamp((now-grow0-Math.max(0,i1-i)*35)/520,0,1); if(k<1) moving=true; return ease(k)};
+  const shown=(i,k)=>{const v=disp[i][k], c=B.clim[k]; return v==null||c==null?v:c+(v-c)*gr(i)};
+  // vertical scale: what is on screen, eased
+  let lo=1e9,hi=-1e9; const take=v=>{if(v==null) return; if(v<lo)lo=v; if(v>hi)hi=v};
+  for(let i=i0;i<=i1;i++){ if(lines>.5){tgt[i].forEach(take)} else take(cs[i].mean) }
+  if(lines>.5) B.clim.forEach(take); else take(B.avg);
   if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
-  if(!ys||reduce()) ys=[mn,mx]; else ys=ys.map((s,q)=>{const t=[mn,mx][q], d=t-s; if(Math.abs(d)<.02) return t; moving=true; return s+d*.25});
-  if(moving) draw();
-  const [y0,y1]=ys, Y=v=>TOP+8+(y1-v)/(y1-y0||1)*(Ht-TOP-BOT-16);
-  geom={GUT,cw,n};
-  // chosen column, days still ahead in the current one
-  g.fillStyle=C['ink-soft'];g.fillRect(CX(si),0,cw,Ht);
-  cs.forEach((c,i)=>{if(today>=c.b||today<c.a) return; const x=CX(i)+(today+DAY-c.a)/(c.b-c.a)*cw; if(x<CX(i+1)){g.fillStyle=C.future;g.fillRect(x,TOP,CX(i+1)-x,Ht-TOP-BOT)}});
+  if(!ys||red) ys=[mn,mx]; else ys=ys.map((s,q)=>{const t=[mn,mx][q], d=t-s; if(Math.abs(d)<.02) return t; moving=true; return s+d*.2});
+  const [y0,y1]=ys, Y=v=>TOP+10+(y1-v)/(y1-y0||1)*(Ht-TOP-BOT-20);
+  geom={GUT,cw,L,n};
+  g.save(); g.beginPath(); g.rect(GUT,0,W-GUT,Ht); g.clip();
+  // warming stripes behind everything: each year tinted by how far it was from the normal
+  for(let i=i0;i<=i1;i++){g.fillStyle=tint(C,cs[i].anom,.07+.38*(1-lines)); g.fillRect(X(i),TOP,cw+.5,Ht-TOP-BOT)}
+  g.fillStyle=C['ink-soft'];g.fillRect(X(si),0,cw,Ht);
+  cs.forEach((c,i)=>{if(i<i0||i>i1||today>=c.b||today<c.a) return; const x=X(i)+(today+DAY-c.a)/(c.b-c.a)*cw; g.fillStyle=C.future;g.fillRect(x,TOP,X(i+1)-x,Ht-TOP-BOT)});
+  g.restore();
   // temperature lines and the scale in the gutter
-  const step=(y1-y0)>16?5:2; g.font='400 11px '+FONT;g.textBaseline='middle';g.textAlign='right';
+  const step=(y1-y0)>16?5:(y1-y0)>7?2:1; g.font='400 11px '+FONT;g.textBaseline='middle';g.textAlign='right';
   for(let v=Math.ceil(y0/step)*step;v<=y1;v+=step){const y=Math.round(Y(v))+.5; if(y<TOP+4||y>Ht-BOT-4) continue;
     g.strokeStyle=v===0?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(GUT,y);g.lineTo(W,y);g.stroke();g.fillStyle=C.muted;g.fillText(fmtT(v),GUT-5,y)}
   g.textAlign='left';
-  g.strokeStyle=C.grid;g.lineWidth=1;
-  for(let i=0;i<=n;i++){const x=Math.round(CX(i))+.5; g.beginPath();g.moveTo(x,TOP);g.lineTo(x,Ht-BOT);g.stroke()}
-  // the average of all finished years, dashed, repeated in every column so each year reads against it
-  g.save();g.setLineDash([3,3]);g.strokeStyle=C.muted;g.globalAlpha=.75;g.lineWidth=1.2;
-  cs.forEach((c,i)=>{g.beginPath(); let on=false; clim.forEach((v,k)=>{if(v==null){on=false;return} const x=PX(i,k),y=Y(v); if(on) g.lineTo(x,y); else {g.moveTo(K===1?x-cw/3:x,y); on=true}}); g.stroke()});
-  g.restore();
-  // each year: a line through its weeks (months, seasons); unfinished points and the forecast are hollow and lighter
-  const r=Math.max(2,Math.min(3.4,cw/K*.28));
-  cs.forEach((c,i)=>{const d=disp[i], soft=k=>c.pts[k].fc||c.pts[k].part;
-    g.lineWidth=i===si?2.4:1.8;g.lineJoin='round';g.lineCap='round';g.strokeStyle=C.ink;
-    for(let k=0;k<K-1;k++){if(d[k]==null||d[k+1]==null) continue; g.globalAlpha=soft(k)||soft(k+1)?.45:1; g.beginPath();g.moveTo(PX(i,k),Y(d[k]));g.lineTo(PX(i,k+1),Y(d[k+1]));g.stroke()}
-    g.globalAlpha=1;
-    d.forEach((v,k)=>{if(v==null) return; g.beginPath();g.arc(PX(i,k),Y(v),r,0,7);
+  g.save(); g.beginPath(); g.rect(GUT,0,W-GUT,Ht); g.clip();
+  if(lines>0){ g.globalAlpha=lines; g.strokeStyle=C.grid;g.lineWidth=1;
+    for(let i=i0;i<=i1+1;i++){const x=Math.round(X(i))+.5; g.beginPath();g.moveTo(x,TOP);g.lineTo(x,Ht-BOT);g.stroke()} g.globalAlpha=1 }
+  const ck=mono(B.clim), r=Math.max(2,Math.min(3.4,cw/K*.26));
+  for(let i=i0;i<=i1&&lines>0;i++){
+    const c=cs[i], vs=c.pts.map((_,k)=>shown(i,k)), m=mono(vs), soft=k=>c.pts[k].fc||c.pts[k].part, Xk=k=>PX(i,k);
+    // the gap between the year and the normal, filled warm above it and cool below
+    const S=Math.max(4,Math.round(cw/K/3));
+    for(let k=0;k<K-1;k++) for(let s=0;s<S;s++){const t0=k+s/S, t1=k+(s+1)/S, a0=herm(vs,m,t0), a1=herm(vs,m,t1), b0=herm(B.clim,ck,t0), b1=herm(B.clim,ck,t1);
+      if(a0==null||a1==null||b0==null||b1==null) continue; const xa=PX(i,t0), xb=PX(i,t1);
+      g.globalAlpha=lines*(soft(k)||soft(k+1)?.5:1); g.fillStyle=tint(C,(a0+a1-b0-b1)/2,.42);
+      g.beginPath();g.moveTo(xa,Y(a0));g.lineTo(xb,Y(a1));g.lineTo(xb,Y(b1));g.lineTo(xa,Y(b0));g.closePath();g.fill()}
+    // the normal, dashed, repeated in every column so each year reads against it
+    g.globalAlpha=lines*.8; g.setLineDash([3,3]); g.strokeStyle=C.muted; g.lineWidth=1.2;
+    for(let k=0;k<K-1;k++){if(B.clim[k]==null||B.clim[k+1]==null) continue; g.beginPath(); spline(g,B.clim,ck,Xk,Y,k,k+1); g.stroke()}
+    g.setLineDash([]);
+    // the year itself: unfinished points and the forecast are hollow and lighter
+    g.lineWidth=i===si?2.6:2;g.lineJoin='round';g.lineCap='round';g.strokeStyle=C.ink;
+    for(let k=0;k<K-1;k++){if(vs[k]==null||vs[k+1]==null) continue; g.globalAlpha=lines*(soft(k)||soft(k+1)?.45:1); g.beginPath(); spline(g,vs,m,Xk,Y,k,k+1); g.stroke()}
+    if(cw/K>=7) vs.forEach((v,k)=>{if(v==null) return; g.globalAlpha=lines; g.beginPath();g.arc(Xk(k),Y(v),r,0,7);
       if(soft(k)){g.fillStyle=C.paper;g.fill();g.lineWidth=1.4;g.stroke()} else {g.fillStyle=C.ink;g.fill()}});
-  });
-  // years along the bottom, the points' names over the chosen column when they fit
-  g.textBaseline='alphabetic';g.textAlign='center';
-  const narrow=cw<40;
-  cs.forEach((c,i)=>{g.font=(i===si?'600 ':'400 ')+'11px '+FONT; g.fillStyle=i===si?C.fg:i===n-1?C.ink:C.muted; g.fillText(colShort(c.y,narrow),CX(i)+cw/2,Ht-5)});
-  const lb=ptLabels(); g.font='400 11px '+FONT; g.fillStyle=C.muted;
-  if(lb.every(t=>g.measureText(t).width<=cw/K-4)) lb.forEach((t,k)=>g.fillText(t,PX(si,k),15));
-  else if(K===4&&mode==='w'&&cw>=24){g.fillText('4 нед.',CX(si)+cw/2,15)}
+    g.globalAlpha=1;
+  }
+  if(lines<1){ // zoomed out: the period's mean, year after year, against the normal
+    g.globalAlpha=1-lines;
+    if(B.avg!=null){g.setLineDash([4,4]);g.strokeStyle=C.muted;g.lineWidth=1.2;g.beginPath();g.moveTo(GUT,Y(B.avg));g.lineTo(W,Y(B.avg));g.stroke();g.setLineDash([])}
+    const ms=cs.map((c,i)=>c.mean==null?null:B.avg==null?c.mean:B.avg+(c.mean-B.avg)*gr(i)), mm=mono(ms), Xc=i=>X(i)+cw/2;
+    g.strokeStyle=C.ink;g.lineWidth=2;g.lineJoin='round';
+    const a=Math.max(0,i0-1), b=Math.min(n-1,i1+1);
+    for(let i=a;i<b;i++){if(ms[i]==null||ms[i+1]==null) continue; g.globalAlpha=(1-lines)*(cs[i+1].fc?.45:1); g.beginPath();spline(g,ms,mm,Xc,Y,i,i+1);g.stroke()}
+    g.globalAlpha=1-lines;
+    for(let i=i0;i<=i1;i++){if(ms[i]==null) continue; const rr=i===si?4:cw>=6?2.4:0; if(!rr) continue; g.beginPath();g.arc(Xc(i),Y(ms[i]),rr,0,7);
+      if(cs[i].fc){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.stroke()} else {g.fillStyle=C.ink;g.fill()}}
+    g.globalAlpha=1;
+  }
+  // each year's mean over the period along the top, warm or cool
+  const inside=(x,w)=>clamp(x,GUT+w/2+2,W-w/2-1); // a label at the edge slides in rather than being cut
+  g.textBaseline='alphabetic';g.textAlign='center';g.font='600 11px '+FONT;
+  for(let i=i0;i<=i1;i++){const c=cs[i]; if(c.mean==null||(cw<40&&i!==si)) continue; const t=fmtT(c.mean);
+    g.fillStyle=c.anom==null||Math.abs(c.anom)<.5?C.muted:c.anom>0?C.hot:C.cold; g.fillText(t,inside(X(i)+cw/2,g.measureText(t).width),16)}
+  // years along the bottom, thinned out when zoomed out; the points' names over the chosen column when they fit
+  const every=[1,2,5,10,20].find(k=>k*cw>=36)||20, label=y=>every>1?String(y):cw<40?'’'+yy(y):winterish()?yy(y-1)+'/'+yy(y):String(y);
+  for(let i=i0;i<=i1;i++){const c=cs[i]; if(i!==si&&(c.y%every||(every>1&&Math.abs(X(i)-X(si))<34))) continue;
+    g.font=(i===si?'600 ':'400 ')+'11px '+FONT; g.fillStyle=i===si?C.fg:i===n-1?C.ink:C.muted; const t=label(c.y), w=g.measureText(t).width, x=X(i)+cw/2;
+    if(i===si||(x-w/2>=GUT&&x+w/2<=W)) g.fillText(t,inside(x,w),Ht-5)}
+  const lb=ptLabels(); g.font='400 10px '+FONT; g.fillStyle=C.muted;
+  if(lines>.5&&lb.every(t=>g.measureText(t).width<=cw/K-3)) lb.forEach((t,k)=>g.fillText(t,PX(si,k),Ht-21));
   g.textAlign='left';
-  readout(cs,si);
-  last=cs;
+  g.restore();
+  // the far end of the archive and the one still loading
+  if(X(0)>GUT+40){const x0=GUT, x1=X(0); g.save();g.textAlign='center';g.fillStyle=older?C.ink:C.muted;g.font='600 13px '+FONT;
+    g.fillText(older?'Загружаем':'Начало архива',(x0+x1)/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText(older?'годы с 1940':'раньше данных нет',(x0+x1)/2,Ht/2+10);g.restore()}
+  if(moving||Math.abs(vel)>.001) draw();
+  readout(B,si,now);
+  drawOv(B,C,si);
 }
-function readout(cs,si){
-  const c=cs[si], p=cs[si-1], full=cs.filter(x=>x.full), avg=full.length?full.reduce((s,x)=>s+x.mean,0)/full.length:null;
-  const same=x=>{ if(x.full) return avg; // an unfinished period is held against the same days of the finished years
-    let s=0,m=0; full.forEach(f=>{let a=0,k=0; x.dv.forEach((v,o)=>{if(v!=null&&f.dv[o]!=null){a+=f.dv[o];k++}}); if(k){s+=a/k;m++}}); return m?s/m:null};
-  const vs=(el,x)=>{const e=$(el), ref=x&&x.mean!=null&&avg!=null?same(x):null; if(ref==null){e.textContent=' ';e.className='dv';return}
-    const d=x.mean-ref, r=Math.round(d); e.textContent=Math.abs(d)<.5?'как обычно':(r>0?'+':'−')+Math.abs(r)+'° к среднему'; e.className='dv'+(Math.abs(d)<.5?'':d>0?' warm':' cool')};
-  $('l0').textContent=colName(c.y); $('n0').textContent=fmtT(c.mean); vs('d0',c);
-  $('l1').textContent=p?colName(p.y):' '; $('n1').textContent=p?fmtT(p.mean):'—'; vs('d1',p);
-  $('l2').textContent=full.length?'Среднее, '+plur(full.length,['год','года','лет']):'Среднее'; $('n2').textContent=fmtT(avg);
-  $('d2').textContent=full.length?colShort(full[0].y)+' – '+colShort(full[full.length-1].y):' ';
+function readout(B,si,now){
+  const cs=B.cs, c=cs[si], p=cs[si-1], word=B.isNorm?'к норме':'к среднему';
+  const vs=(el,x)=>{const e=$(el); if(!x||x.anom==null){e.textContent=' ';e.className='dv';return}
+    const d=x.anom, r=Math.round(d); e.textContent=Math.abs(d)<.5?'как обычно':(r>0?'+':'−')+Math.abs(r)+'° '+word; e.className='dv'+(Math.abs(d)<.5?'':d>0?' warm':' cool')};
+  // the big numbers count to their new values
+  const num=(id,v)=>{const h=hdr[id]; if(v==null||h==null||reduce()) hdr[id]=v; else if(Math.abs(v-h)>.05){hdr[id]=h+(v-h)*.2; draw()} else hdr[id]=v; $(id).textContent=fmtT(hdr[id])};
+  $('l0').textContent=colName(c.y); num('n0',c.mean); vs('d0',c);
+  $('l1').textContent=p?colName(p.y):' '; num('n1',p?p.mean:null); vs('d1',p);
+  const ref=B.ref; $('l2').textContent=B.isNorm?'Норма':ref.length?'Среднее, '+plur(ref.length,['год','года','лет']):'Среднее'; num('n2',B.avg);
+  $('d2').textContent=B.isNorm?NORM[0]+'–'+NORM[1]:ref.length?ref[0].y+'–'+ref[ref.length-1].y:' ';
   let rel;
   if(c.a<=today&&today<c.b) rel='Идёт сейчас'+(c.fc?' · с прогнозом':'');
   else{const ad=Math.round((today-c.b)/DAY)+1, n=Math.round(ad/365.25);
     rel=ad<60?plur(Math.max(1,Math.round(ad/7)),NED)+' назад':ad<351?plur(Math.round(ad/30.4),MES)+' назад':n===1?'Год назад':n+(n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?' года назад':' лет назад')}
   $('rel').textContent=rel[0].toUpperCase()+rel.slice(1);
   $('date').textContent=periodName();
-  const cur=am===new Date(today).getUTCMonth()||(mode==='m'&&seasonOf(am)===seasonOf(new Date(today).getUTCMonth()))||mode==='s';
-  $('today').disabled=cur&&selBack===0;
+  const m=new Date(today).getUTCMonth(), cur=mode==='s'||(mode==='w'?am===m:seasonOf(am)===seasonOf(m));
+  $('today').disabled=cur&&si===cs.length-1&&tOff<.01;
+  $('zin').disabled=tVis<=3.01; $('zout').disabled=tVis>=cs.length-.01;
+}
+
+/* ---------- overview strip: every year of the archive as a stripe ---------- */
+let ovKey='', ovBg=null;
+function drawOv(B,C,si){
+  const [g,W,Ht]=fit($('ov')), cs=B.cs, n=cs.length, dpr=devicePixelRatio||1, SH=Ht-13, X=i=>i/n*W;
+  const key=[bKey,W,Ht,dpr,C.hot,C.cold].join('|');
+  if(key!==ovKey){ovKey=key; ovBg=ovBg||document.createElement('canvas'); ovBg.width=Math.round(W*dpr); ovBg.height=Math.round(Ht*dpr);
+    const o=ovBg.getContext('2d'); o.setTransform(dpr,0,0,dpr,0,0); o.clearRect(0,0,W,Ht);
+    o.fillStyle=C['grid'];o.globalAlpha=.35;o.fillRect(0,0,W,SH);o.globalAlpha=1;
+    cs.forEach((c,i)=>{o.fillStyle=tint(C,c.anom,.95); o.fillRect(X(i),0,Math.max(.6,W/n)+.4,SH)});
+    o.font='500 11px '+FONT;o.fillStyle=C.muted;o.textBaseline='alphabetic';
+    const every=[1,2,5,10,20,50].find(k=>k*W/n>=40)||50; let last=-1;
+    cs.forEach((c,i)=>{if(c.y%every) return; const x=X(i)+W/n/2, t=String(c.y), w=o.measureText(t).width; if(x-w/2<last+4||x+w/2>W) return; o.fillText(t,x-w/2,Ht-1); last=x+w/2})}
+  g.clearRect(0,0,W,Ht); g.drawImage(ovBg,0,0,W,Ht);
+  const L=n-vis-off, x0=Math.max(0,X(L)), x1=Math.min(W,X(L+vis));
+  g.fillStyle=C.fg;g.globalAlpha=.06;g.fillRect(x0,0,x1-x0,SH);g.globalAlpha=1;g.strokeStyle=C.fg;g.lineWidth=1.5;g.strokeRect(x0+.75,.75,Math.max(2,x1-x0-1.5),SH-1.5);
+  g.fillStyle=C.ink;g.fillRect(X(si)+W/n/2-1,0,2,SH);
 }
 
 /* ---------- interaction ---------- */
 const STEP={w:['Предыдущий месяц','Следующий месяц'],m:['Предыдущий сезон','Следующий сезон'],s:['','']};
-function stepPeriod(d){ if(mode==='s') return; am=(am+d*(mode==='m'?3:1)+120)%12; if(mode==='m') am=(seasonOf(am)*3+12)%12; draw() } // a season keeps its middle month
+function stepPeriod(d){ if(mode==='s') return; am=(am+d*(mode==='m'?3:1)+120)%12; if(mode==='m') am=(seasonOf(am)*3)%12; draw() } // a season keeps its middle month
 function setMode(m){
   mode=m; store.set('yrmode',m); if(m==='m') am=(seasonOf(am)*3)%12;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.m===m)));
   ['prev','next'].forEach((id,i)=>{const b=$(id); b.disabled=m==='s'; b.setAttribute('aria-label',STEP[m][i]||'—'); b.title=STEP[m][i]});
   ys=null; draw();
 }
-function goToday(){ am=new Date(today||Date.now()).getUTCMonth(); if(mode==='m') am=(seasonOf(am)*3)%12; selBack=0; draw() }
-const box=$('box'); let tap=null;
-box.addEventListener('pointerdown',e=>{tap={x:e.clientX,y:e.clientY}});
-box.addEventListener('pointerup',e=>{if(!tap||!geom) return; const dx=e.clientX-tap.x, dy=e.clientY-tap.y; tap=null;
-  if(Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)){stepPeriod(dx<0?1:-1);return} // swipe: the next or the previous month
-  if(Math.abs(dx)<8&&Math.abs(dy)<8){const r=box.getBoundingClientRect(), i=Math.floor((e.clientX-r.left-geom.GUT)/geom.cw);
-    if(i>=0&&i<geom.n){selBack=geom.n-1-i; draw()}}});
-box.addEventListener('pointercancel',()=>tap=null);
+function goToday(){ am=new Date(today||Date.now()).getUTCMonth(); if(mode==='m') am=(seasonOf(am)*3)%12; selY=null; tOff=0; draw() }
+function zoomTo(v,ax){ // ax: the column (fractional) that stays under its spot on screen
+  if(!geom) return; const {GUT,cw,n}=geom, W=$('box').clientWidth, L=n-vis-off, x=GUT+(ax-L)*cw;
+  const stick=tOff<.01; // a view resting on the newest year keeps it on the right edge
+  tVis=clamp(v,Math.min(3,n),n); const cw2=(W-GUT)/tVis; tOff=stick?0:n-tVis-(ax-(x-GUT)/cw2); draw();
+}
+const selAx=()=>{const B=bOut; if(!B||!geom) return 0; const i=selY==null?B.cs.length-1:B.cs.findIndex(c=>c.y===selY); return (i<0?B.cs.length-1:i)+.5};
+const box=$('box'), ptrs=new Map(); let drag=null, pinch=null, raf=0;
+const colAt=x=>{if(!geom) return -1; const i=Math.floor(geom.L+(x-geom.GUT)/geom.cw); return i>=0&&i<geom.n?i:-1};
+box.addEventListener('pointerdown',e=>{if(!vals) return; cancelAnimationFrame(raf); vel=0; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){const [a,b]=[...ptrs.values()], r=box.getBoundingClientRect(), mx=(a.x+b.x)/2-r.left;
+    pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,v:vis,ax:geom.L+(mx-geom.GUT)/geom.cw,mx}; drag=null; box.setPointerCapture?.(e.pointerId); return}
+  drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,o:off}});
+box.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pinch&&ptrs.size===2){const [a,b]=[...ptrs.values()], d=Math.hypot(a.x-b.x,a.y-b.y)||1, n=geom.n, W=box.clientWidth;
+    vis=tVis=clamp(pinch.v*pinch.d/d,Math.min(3,n),n); const cw=(W-geom.GUT)/vis; off=tOff=clamp(n-vis-(pinch.ax-(pinch.mx-geom.GUT)/cw),0,Math.max(0,n-vis)); draw(); return}
+  if(!drag) return;
+  if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y); if(dx<6&&dy<6) return; drag.lock=dx>dy?'x':'y'; if(drag.lock==='x') box.setPointerCapture?.(e.pointerId)}
+  if(drag.lock!=='x') return;
+  const dx=e.clientX-drag.last, now=performance.now();
+  off=tOff=clamp(off+dx/geom.cw,0,Math.max(0,geom.n-vis)); vel=dx/Math.max(8,now-drag.t)/geom.cw; drag.last=e.clientX; drag.t=now; draw()});
+function release(e){ if(!ptrs.has(e.pointerId)) return; ptrs.delete(e.pointerId);
+  if(pinch){ if(ptrs.size<2) pinch=null; drag=null; return }
+  const d=drag; drag=null; if(!d) return;
+  if(d.lock===null&&e.type==='pointerup'){const r=box.getBoundingClientRect(), i=colAt(e.clientX-r.left); if(i>=0){selY=i===geom.n-1?null:bOut.cs[i].y; draw()} return}
+  if(d.lock!=='x'||reduce()) return;
+  const step=()=>{vel*=.93; if(Math.abs(vel)<.0005){vel=0;draw();return} const o=clamp(off+vel*16,0,Math.max(0,geom.n-vis)); if(o===off){vel=0;draw();return} off=tOff=o; draw(); raf=requestAnimationFrame(step)};
+  raf=requestAnimationFrame(step)}
+box.addEventListener('pointerup',release); box.addEventListener('pointercancel',release);
+box.addEventListener('wheel',e=>{if(!geom) return; e.preventDefault(); const r=box.getBoundingClientRect();
+  if(Math.abs(e.deltaX)>Math.abs(e.deltaY)){tOff=clamp(tOff-e.deltaX/geom.cw,0,Math.max(0,geom.n-tVis)); off=tOff; draw(); return}
+  zoomTo(tVis*Math.exp(e.deltaY*(e.ctrlKey?.01:.0025)),geom.L+(e.clientX-r.left-geom.GUT)/geom.cw)},{passive:false});
 box.tabIndex=0;
-box.addEventListener('keydown',e=>{ if(!geom) return;
-  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){selBack=Math.max(0,Math.min(geom.n-1,selBack+(e.key==='ArrowLeft'?1:-1)));draw();e.preventDefault()}
+box.addEventListener('keydown',e=>{ if(!geom) return; const cs=bOut.cs, n=cs.length;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){let i=Math.floor(selAx())+(e.key==='ArrowLeft'?-1:1); i=clamp(i,0,n-1); selY=i===n-1?null:cs[i].y;
+    const L=n-tVis-tOff; if(i<L) tOff=n-tVis-i; else if(i+1>L+tVis) tOff=n-i-1; draw(); e.preventDefault()}
+  if(e.key==='+'||e.key==='='){zoomTo(tVis/1.6,selAx());e.preventDefault()}
+  if(e.key==='-'){zoomTo(tVis*1.6,selAx());e.preventDefault()}
   if(e.key==='PageUp'||e.key==='PageDown'){stepPeriod(e.key==='PageUp'?-1:1);e.preventDefault()}});
+const ov=$('ovbox'); let ovDrag=false;
+const ovSet=e=>{if(!geom) return; const r=ov.getBoundingClientRect(), n=geom.n, c=(e.clientX-r.left)/r.width*n; tOff=n-tVis-(c-tVis/2); if(ovDrag==='move') off=clamp(tOff,0,Math.max(0,n-tVis)); draw()};
+ov.addEventListener('pointerdown',e=>{if(!vals) return; ovDrag='tap'; ov.setPointerCapture?.(e.pointerId); ovSet(e)});
+ov.addEventListener('pointermove',e=>{if(ovDrag){ovDrag='move'; ovSet(e)}});
+ov.addEventListener('pointerup',()=>ovDrag=false); ov.addEventListener('pointercancel',()=>ovDrag=false);
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.m)));
 $('prev').addEventListener('click',()=>stepPeriod(-1));
 $('next').addEventListener('click',()=>stepPeriod(1));
+$('zin').addEventListener('click',()=>zoomTo(tVis/1.6,selAx()));
+$('zout').addEventListener('click',()=>zoomTo(tVis*1.6,selAx()));
 $('today').addEventListener('click',goToday);
-addEventListener('resize',draw);
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
-am=new Date(Date.now()).getMonth();
+addEventListener('resize',()=>{ovKey='';draw()});
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKey='';draw()});
 setMode(['w','m','s'].includes(mode)?mode:'w');
 load().then(goToday);
 })();
