@@ -1,8 +1,10 @@
 // Cloudflare Workers Builds: при каждом пуше в main Cloudflare собирает зеркало Open-Meteo из этого репозитория.
 // "name" должен совпадать с именем воркера в панели Cloudflare.
+// Пустой "previews" нужен для сборок веток и PR (npx wrangler preview), на основной деплой он не влияет.
 {
   "name": "termograf",
   "main": "cloudflare/worker.js",
   "compatibility_date": "2025-09-01",
-  "workers_dev": true
+  "workers_dev": true,
+  "previews": {}
 }
