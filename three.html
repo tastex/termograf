@@ -73,6 +73,20 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 .links a.back{color:var(--ink);text-decoration:none}
 .links a.back:hover{text-decoration:underline}
 .links .go{display:flex;gap:12px}
+.mode{position:relative;flex:none;margin-left:auto}
+.mbtn{box-sizing:border-box;height:32px;display:flex;align-items:center;gap:6px;font:500 13px var(--f-body);color:var(--ink);background:var(--paper-2);border:0;border-radius:999px;padding:0 12px;cursor:pointer;white-space:nowrap}
+.mbtn svg{transition:transform .18s ease}.mbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.modes{position:absolute;right:0;bottom:calc(100% + 6px);z-index:15;width:min(280px,calc(100vw - 32px));margin:0;padding:4px;list-style:none;
+  background:var(--paper);border:1px solid var(--grid);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16);transform-origin:100% 100%;animation:pop .16s ease-out}
+.modes li{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px}
+.modes li:hover,.modes li:focus{background:var(--paper-2);outline:none}
+.modes li>div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.modes b{font:500 16px var(--f-body);color:var(--fg)}.modes li[aria-checked="true"] b{color:var(--ink)}
+.modes span{font:400 13px var(--f-body);color:var(--muted)}
+.modes i{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--grid-strong)}
+.modes li[aria-checked="true"] i{background:var(--ink);border-color:var(--ink)}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}}
+@media (prefers-reduced-motion:reduce){.modes{animation:none}.mbtn svg{transition:none}}
 .note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
 @media (prefers-reduced-motion:reduce){.part{transition:none}}
 </style>
@@ -102,7 +116,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     </div>
     <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
-  <div class="foot"><span>Город</span><b id="city">—</b></div>
+  <div class="foot"><span>Город</span><b id="city">—</b>
+    <div class="mode">
+      <button class="mbtn" id="modeBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="modes"><span id="modeName">Температура</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+      <ul class="modes" id="modes" role="listbox" aria-label="Что показывать" hidden></ul>
+    </div>
+  </div>
   <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><div class="go"><a class="back" id="back" href="./">Обычный график</a><a class="back" id="yr" href="years.html">По годам</a></div></div>
 </div>
 
@@ -117,6 +136,19 @@ const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},se
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
+// what the charts show, the same choice as on the main page: an Open-Meteo variable each, with its units and scale.
+// g: the scale rounds to it, min: the narrowest scale, lim: values that cannot be passed, step: grid lines [fine, coarse, coarse from this range]
+const METRICS={
+  temp:{v:'temperature_2m',name:'Температура',hint:'°C',num:fmtT,unit:'°',g:2,min:6,step:[2,5,16]},
+  feel:{v:'apparent_temperature',name:'Ощущается',hint:'с учётом ветра и влажности',num:fmtT,unit:'°',g:2,min:6,step:[2,5,16]},
+  wind:{v:'wind_speed_10m',name:'Ветер',hint:'м/с',num:v=>v<9.95?v.toFixed(1).replace('.',','):String(Math.round(v)),same:.5,unit:'\u202fм/с',g:1,min:4,lim:[0,1e9],step:[1,2,8]},
+  pres:{v:'pressure_msl',name:'Давление',hint:'мм рт. ст.',unit:'\u202fмм',k:0.750062,g:2,min:6,step:[2,5,16]},
+  hum:{v:'relative_humidity_2m',name:'Влажность',hint:'относительная, %',unit:'%',g:5,min:20,lim:[0,100],step:[10,25,50]},
+  cloud:{v:'cloud_cover',name:'Облачность',hint:'доля неба в облаках, %',unit:'%',g:10,min:30,lim:[0,100],step:[10,25,50]},
+};
+const MK=Object.keys(METRICS), VARS=MK.map(k=>METRICS[k].v).join(',')+'&wind_speed_unit=ms';
+let metric='temp'; try{const m=localStorage.getItem('metric'); if(METRICS[m]) metric=m}catch(e){}
+const M=()=>METRICS[metric], fmtV=v=>v==null||isNaN(v)?'—':M().num?M().num(v):String(Math.round(v))+(M().unit==='%'?'%':'');
 const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
 const DN=['день','дня','дней'], NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
 const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -141,23 +173,26 @@ async function om(u){
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
 /* ---------- data: one value per day for each part of the day ---------- */
-function daysFrom(t,temp,now){
+function daysFrom(t,s,now){ // s: hourly values for each metric; every day keeps them all (m), v is the one on screen
   const map=new Map();
-  for(let i=0;i<t.length;i++){const v=temp[i]; if(v==null) continue; const d=dayOf(t[i]), h=new Date(t[i]).getUTCHours();
-    let r=map.get(d); if(!r){r={k:d,s:[0,0,0],n:[0,0,0],last:[0,0,0]};map.set(d,r)}
-    PARTS.forEach((p,j)=>{if(h>=p.a&&h<=p.b){r.s[j]+=v;r.n[j]++;r.last[j]=Math.max(r.last[j],t[i])}})}
-  return [...map.values()].sort((a,b)=>a.k-b.k).map(r=>({k:r.k,v:r.n.map((n,j)=>n>=3?r.s[j]/n:null)}));
+  for(let i=0;i<t.length;i++){const d=dayOf(t[i]), h=new Date(t[i]).getUTCHours();
+    let r=map.get(d); if(!r){r={k:d,s:{},n:{}};MK.forEach(k=>{r.s[k]=[0,0,0];r.n[k]=[0,0,0]});map.set(d,r)}
+    PARTS.forEach((p,j)=>{if(h>=p.a&&h<=p.b) MK.forEach(k=>{const v=s[k][i]; if(v!=null){r.s[k][j]+=v;r.n[k][j]++}})})}
+  return [...map.values()].sort((a,b)=>a.k-b.k).map(r=>{const m={}; MK.forEach(k=>m[k]=r.n[k].map((n,j)=>n>=3?r.s[k][j]/n:null)); return {k:r.k,m,v:m[metric]}});
 }
+const hourly=j=>{const s={}; MK.forEach(k=>{const a=j.hourly[METRICS[k].v]||[], c=METRICS[k].k; s[k]=c?a.map(v=>v==null?v:v*c):a}); return s};
 function setDays(list,now){ // keep the day under the cursor when the data is replaced
   const keep=days.length?days[Math.round(vc)]?.k:null;
   days=list; nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now))); limit=dayOf(now)-HIST; ovKey='';
   if(keep!=null){const i=days.findIndex(d=>d.k===keep); center=vc=i<0?todayI:i} else center=vc=todayI;
   ys=null; draw();
 }
-function fakeHours(a,b){const t=[],temp=[];
+function fakeHours(a,b){const t=[],s={}; MK.forEach(k=>s[k]=[]);
   for(let x=a;x<b;x+=H){const k=x/H, doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, hr=new Date(x).getUTCHours();
-    t.push(x); temp.push(6+13*Math.cos((doy-200)/365*2*Math.PI)+3*Math.sin(k/41)+2*Math.sin(k/97+1)+1.5*Math.sin(k/13)+4.5*Math.cos((hr-15)/24*2*Math.PI))}
-  return [t,temp];
+    const v=6+13*Math.cos((doy-200)/365*2*Math.PI)+3*Math.sin(k/41)+2*Math.sin(k/97+1)+1.5*Math.sin(k/13)+4.5*Math.cos((hr-15)/24*2*Math.PI), w=Math.max(.4,3+2*Math.sin(k/31)+1.4*Math.sin(k/7+1));
+    t.push(x); s.temp.push(v); s.feel.push(v-.7*w); s.wind.push(w); s.pres.push(752+7*Math.sin(k/90)+4*Math.sin(k/37+2));
+    s.hum.push(Math.min(100,Math.max(25,85-3*(v-6)))); s.cloud.push(Math.min(100,Math.max(0,50+50*Math.sin(k/19))))}
+  return [t,s];
 }
 async function place(){
   const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon'));
@@ -169,13 +204,13 @@ const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
 async function load(){
   const w=W0=await place(); $('city').textContent=w.name;
   $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('yr').href='years.html'+new URL($('back').href).search;
-  const key='x3:'+w.lat+','+w.lon, use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),j.hourly.temperature_2m,now),now)};
+  const key='x3m:'+w.lat+','+w.lon, use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),hourly(j),now),now)};
   let shown=false;
   try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}}catch(e){}
   try{
-    const j=await (await om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=temperature_2m&past_days=92&forecast_days=16&timezone=auto`)).json();
+    const j=await (await om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=${VARS}&past_days=92&forecast_days=16&timezone=auto`)).json();
     if(!j.hourly) throw 0; store.set(key,JSON.stringify({at:Date.now(),j})); use(j);
-  }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,temp]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,temp,now),now); $('note').hidden=false } }
+  }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,fs]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,fs,now),now); $('note').hidden=false } }
 }
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 async function extendBack(){ // a year of archive when the view gets near the oldest day
@@ -184,9 +219,9 @@ async function extendBack(){ // a year of archive when the view gets near the ol
   const end=days[0].k, start=Math.max(limit,end-366*DAY);
   try{
     let list;
-    if(sample){await new Promise(r=>setTimeout(r,300)); const [t,temp]=fakeHours(start,end); list=daysFrom(t,temp,nowMs)}
-    else{const j=await (await om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m&timezone=auto`)).json();
-      list=daysFrom(j.hourly.time.map(P),j.hourly.temperature_2m,nowMs)}
+    if(sample){await new Promise(r=>setTimeout(r,300)); const [t,fs]=fakeHours(start,end); list=daysFrom(t,fs,nowMs)}
+    else{const j=await (await om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&timezone=auto`)).json();
+      list=daysFrom(j.hourly.time.map(P),hourly(j),nowMs)}
     list=list.filter(d=>d.k<end); if(!list.length) throw 0;
     const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n;
     if(!reduce()){fade={i:n,e:0}; const t0=performance.now(); const st=now=>{const k=Math.min(1,(now-t0)/320); fade.e=1-Math.pow(1-k,3); draw(); if(k<1) requestAnimationFrame(st); else fade=null}; requestAnimationFrame(st)}
@@ -203,7 +238,9 @@ function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
 function scaleFor(j){ // each chart scales to the days around the view, so day-to-day changes fill its height
   let lo=1e9,hi=-1e9; const a=Math.max(0,Math.floor(vc-span)), b=Math.min(days.length-1,Math.ceil(vc+span));
   for(let i=a;i<=b;i++){const v=days[i].v[j]; if(v==null) continue; if(v<lo)lo=v; if(v>hi)hi=v}
-  if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-1)/2)*2, mx=Math.ceil((hi+1)/2)*2; if(mx-mn<6){const m=(mn+mx)/2; mn=Math.floor(m-3); mx=mn+6}
+  const {g,min,lim}=M(); if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-g/2)/g)*g, mx=Math.ceil((hi+g/2)/g)*g;
+  if(mx-mn<min){const m=(mn+mx)/2; mn=Math.floor((m-min/2)/g)*g; mx=mn+min}
+  if(lim){if(mn<lim[0]){mx+=lim[0]-mn;mn=lim[0]} if(mx>lim[1]){mn=Math.max(lim[0],mn-(mx-lim[1]));mx=lim[1]}}
   return [mn,mx];
 }
 // a smooth line that passes exactly through every day's point (monotone cubic, so it never bulges past the data)
@@ -263,7 +300,7 @@ function render(){
     const bh=Math.max(0,wNow[j])/sumW*avail; const yb=y0; y0+=bh; if(bh<14) return;
     const [mn,mx]=ys[j], pad=Math.min(10,bh*.12), Y=v=>yb+pad+(mx-v)/(mx-mn||1)*(bh-2*pad), col=C['c-'+p.k];
     g.save(); g.beginPath(); g.rect(0,yb,W,bh); g.clip();
-    const step=(mx-mn)>16?5:2; g.lineWidth=1; g.strokeStyle=C.grid;
+    const st=M().step, step=(mx-mn)>st[2]?st[1]:st[0]; g.lineWidth=1; g.strokeStyle=C.grid;
     for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Math.round(Y(v))+.5; if(y<yb+4||y>yb+bh-4) continue; g.beginPath();g.moveTo(Math.max(0,xs),y);g.lineTo(Math.min(W,xe),y);g.stroke()}
     // line through each day's value; forecast lighter
     const m=tangents(j,i0-1,i1+1), segs=[]; let cur=null;
@@ -278,7 +315,7 @@ function render(){
       if(i>todayI){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.strokeStyle=col;g.stroke()} else {g.fillStyle=col;g.fill()}}
     // labels: scale on the left, the chart's name on the right
     g.font='400 11px '+FONT;g.textBaseline='middle';
-    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v); if(y<yb+8||y>yb+bh-6) continue; const t=fmtT(v), w=g.measureText(t).width;const lx=Math.max(0,xs);g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(lx,y-7,w+6,14);g.globalAlpha=1;g.fillStyle=C.muted;g.fillText(t,lx+2,y)}
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v); if(y<yb+8||y>yb+bh-6) continue; const t=metric==='wind'?String(v):fmtV(v), w=g.measureText(t).width;const lx=Math.max(0,xs);g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(lx,y-7,w+6,14);g.globalAlpha=1;g.fillStyle=C.muted;g.fillText(t,lx+2,y)}
     g.font='600 11px '+FONT; const nm=['Утро','День','Вечер'][j], nw=g.measureText(nm).width;
     g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(W-nw-8,yb+3,nw+8,15);g.globalAlpha=1;g.fillStyle=col;g.fillText(nm,W-nw-4,yb+11);
     // cursor dot on the line
@@ -305,10 +342,11 @@ function readout(i){
   const yrs=n=>{const m10=n%10,m100=n%100;return n===1?'год назад':n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')};
   const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yrs(Math.max(1,Math.round(ad/365.25))));
   $('date').textContent=WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+(dt.getUTCFullYear()!==new Date(nowMs).getUTCFullYear()?' '+dt.getUTCFullYear():'');
-  $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'');
-  PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtT(v);
+  const mt=M(); $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'')+(metric!=='temp'?' · '+mt.name.toLowerCase()+', '+mt.unit.trim():'');
+  PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtV(v);
     const el=$('d'+j); if(v==null||pv==null){el.textContent='\u00a0';el.className='dv';return}
-    const dv=v-pv, r=Math.round(dv); el.textContent=Math.abs(dv)<1?'так же':(r>0?'+':'−')+Math.abs(r)+'° за сутки'; el.className='dv'+(Math.abs(dv)<1?'':dv>0?' warm':' cool')});
+    const dv=v-pv, a=Math.abs(dv), same=a<(mt.same||1); // wind is shown to a tenth, so its changes are too
+    el.textContent=same?'так же':(dv>0?'+':'−')+(metric==='wind'?mt.num(a):Math.round(a))+mt.unit+' за сутки'; el.className='dv'+(same?'':dv>0?' warm':' cool')});
 }
 
 /* ---------- overview strip ---------- */
@@ -365,6 +403,22 @@ ov.addEventListener('pointerup',()=>ovDrag=false);
 function setSpan(d){span=d;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.d===d)));ys=null;spd=0;lastC=null;draw()}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
 $('today').addEventListener('click',goToday);
+function useMetric(k){if(!METRICS[k]||k===metric) return; metric=k; store.set('metric',k); days.forEach(d=>d.v=d.m[k]); ys=null; ovKey=''; showMetric(); draw()}
+function showMetric(){const m=M(); $('modeName').textContent=m.name; $('modeBtn').setAttribute('aria-label','Показывать: '+m.name.toLowerCase()+'. Сменить');
+  [...$('modes').children].forEach(li=>li.setAttribute('aria-checked',String(li.dataset.k===metric)))}
+function modesOpen(on){const ul=$('modes'); ul.hidden=!on; $('modeBtn').setAttribute('aria-expanded',String(on)); if(on) ul.querySelector('[aria-checked="true"]')?.focus()}
+MK.forEach(k=>{const m=METRICS[k], li=document.createElement('li'); li.setAttribute('role','option'); li.dataset.k=k; li.tabIndex=-1;
+  const dot=document.createElement('i'), tx=document.createElement('div'), b=document.createElement('b'), sp=document.createElement('span');
+  b.textContent=m.name; sp.textContent=m.hint; tx.append(b,sp); li.append(dot,tx);
+  li.addEventListener('click',()=>{modesOpen(false); useMetric(k); $('modeBtn').focus()});
+  li.addEventListener('keydown',e=>{const l=[...$('modes').children], i=l.indexOf(li);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault(); l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length].focus()}
+    else if(e.key==='Enter'||e.key===' '){e.preventDefault(); li.click()}
+    else if(e.key==='Escape'){modesOpen(false); $('modeBtn').focus()}});
+  $('modes').append(li)});
+$('modeBtn').addEventListener('click',()=>modesOpen($('modes').hidden));
+document.addEventListener('pointerdown',e=>{if(!$('modes').hidden&&!e.target.closest('.mode')) modesOpen(false)});
+showMetric();
 addEventListener('resize',()=>{ovKey='';draw()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKey='';draw()});
 setSpan([14,31,92,365].includes(span)?span:14);

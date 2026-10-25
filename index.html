@@ -102,6 +102,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   max-width:calc(100% - 32px);background:var(--fg);color:var(--paper);font:500 16px/1.3 var(--f-body);padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);transition:opacity .25s ease,transform .25s ease}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){.toast,.chartbox canvas{transition:none}.locbtn.busy svg{animation:none}}
+.mode{position:relative;flex:none}
+.mbtn{box-sizing:border-box;height:32px;display:flex;align-items:center;gap:6px;font:500 13px var(--f-body);color:var(--ink);background:var(--paper-2);border:0;border-radius:999px;padding:0 12px;cursor:pointer;white-space:nowrap}
+.mbtn svg{transition:transform .18s ease}.mbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.sugg.modes{left:auto;right:0;width:min(280px,calc(100vw - 32px));transform-origin:100% 100%;animation:pop .16s ease-out}
+.modes li{flex-direction:row;align-items:center;gap:10px}
+.modes li>div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.modes li[aria-checked="true"] b{color:var(--ink)}
+.modes i{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--grid-strong)}
+.modes li[aria-checked="true"] i{background:var(--ink);border-color:var(--ink)}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}}
+.temp small,#triN small{font:500 22px/1 var(--f-body);letter-spacing:0;margin-left:6px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.sugg.modes{animation:none}.mbtn svg{transition:none}}
 .city .lbl{font:400 13px var(--f-body);color:var(--muted)}
 .src{font:400 13px var(--f-body);color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .src a{color:inherit}
@@ -160,6 +172,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <ul class="sugg" id="sugg" role="listbox" hidden></ul>
       <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     </form>
+    <div class="mode">
+      <button class="mbtn" id="modeBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="modes"><span id="modeName">Температура</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+      <ul class="sugg modes" id="modes" role="listbox" aria-label="Что показывать" hidden></ul>
+    </div>
   </div>
   <div class="links">
     <div class="src"><span id="tz"></span>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div>
@@ -186,6 +202,33 @@ const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},se
 function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
 function fmtT(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'}
 function fmtD(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+'°'}
+// what the chart can show: an Open-Meteo variable each, with its units, scale and the words for "more" and "less".
+// D.temp is always the series on screen; the others wait in D.s
+const NUM=u=>({num:v=>String(Math.round(v)),unit:u,short:v=>Math.round(v)+(u==='%'?u:''),dif:v=>{const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+u.trim()}});
+const TEMP={num:fmtT,short:fmtT,unit:'',dif:fmtD,more:'теплее',less:'холоднее',th:[1,3,6,10,15],
+  lim:(lo,hi)=>{let mn=Math.floor((lo-3)/5)*5, mx=Math.ceil((hi+2.5)/5)*5; if(mx-mn<15) mx=mn+15; return [mn,mx]}, step:r=>r>40?10:5};
+const METRICS={
+  temp:{...TEMP,name:'Температура',hint:'°C'},
+  feel:{...TEMP,name:'Ощущается',hint:'с учётом ветра и влажности'},
+  wind:{...NUM('\u202fм/с'),num:v=>v<9.95?(Math.round(v*10)/10).toFixed(1).replace('.',','):String(Math.round(v)),dif:v=>(v>=.05?'+':v<=-.05?'−':'±')+(Math.abs(v)<9.95?Math.abs(v).toFixed(1).replace('.',','):Math.round(Math.abs(v)))+'\u202fм/с',
+    name:'Ветер',cur:'текущему',hint:'м/с, порывы и направление',more:'сильнее',less:'слабее',th:[.5,1.5,3,5,8],
+    lim:(lo,hi)=>[0,Math.max(10,Math.ceil((hi+1)/5)*5)], step:r=>r>25?10:r>12?5:2},
+  pres:{...NUM('\u202fмм'),name:'Давление',cur:'текущему',hint:'мм рт. ст.',more:'выше',less:'ниже',th:[1,3,6,10,15],
+    lim:(lo,hi)=>{let mn=Math.floor((lo-2)/5)*5, mx=Math.ceil((hi+2)/5)*5; if(mx-mn<15){mn-=5;mx=mn+20} return [mn,mx]}, step:r=>r>40?10:5},
+  hum:{...NUM('%'),name:'Влажность',hint:'относительная, %',more:'влажнее',less:'суше',th:[3,8,15,25,40],lim:()=>[0,100],step:()=>25},
+  cloud:{...NUM('%'),name:'Облачность',hint:'доля неба в облаках, %',more:'облачнее',less:'яснее',th:[5,15,30,50,70],lim:()=>[0,100],step:()=>25},
+};
+// series kept for every hour: the chartable ones plus gusts and direction for the wind readout
+const SER={temp:'temperature_2m',feel:'apparent_temperature',wind:'wind_speed_10m',gust:'wind_gusts_10m',dir:'wind_direction_10m',pres:'pressure_msl',hum:'relative_humidity_2m',cloud:'cloud_cover'};
+const SK=Object.keys(SER), hPa=0.750062; // pressure arrives in hPa and is shown in mm of mercury
+const series=(h,k,n)=>{const a=h[SER[k]]||new Array(n).fill(null); return k==='pres'?a.map(v=>v==null?v:v*hPa):a.slice()};
+const fmtV=v=>M().num(v)+M().unit, fmtS=v=>M().short(v), fmtDV=v=>M().dif(v); // fmtS: chart labels, the units are in the big number
+const RUMB=['С','СВ','В','ЮВ','Ю','ЮЗ','З','СЗ'], rumb=d=>RUMB[Math.round(((d%360)+360)%360/45)%8];
+let metric='temp'; try{const m=localStorage.getItem('metric'); if(METRICS[m]) metric=m}catch(e){}
+const M=()=>METRICS[metric];
+function bigNum(el,v){const m=M(), u=m.unit.trim(); el.textContent=m.num(v); if(u){const s=document.createElement('small'); s.textContent=u; el.append(s)}}
+function verdictOf(dv){const m=M(), a=Math.abs(dv), w=dv>0?m.more:m.less, t=m.th;
+  return a<t[0]?'Так же':a<t[1]?'Чуть '+w:a<t[2]?w[0].toUpperCase()+w.slice(1):a<t[3]?'Заметно '+w:a<t[4]?'Сильно '+w:'Намного '+w}
 function dLabel(ms){const d=new Date(ms);return WD[d.getUTCDay()]+', '+d.getUTCDate()+' '+MON[d.getUTCMonth()]}
 function yearsAgo(ad){const n=Math.max(1,Math.round(ad/365.25)); if(n===1) return 'год назад';
   const m10=n%10,m100=n%100; return n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')}
@@ -216,26 +259,32 @@ function fakeHour(x,lat){
   return [season+drift+amp*Math.cos((hr-15)/24*2*Math.PI), r, r?(r>1?63:61):(wet?3:(n(k+.3)<.5?1:2))];
 }
 function fakeRange(a,b){
-  const o={t:[],temp:[],rain:[],code:[],sun:{}};
-  for(let x=a;x<b;x+=H){if(x%DAY===0)o.sun[x]=sunApprox(x,55.75,12.5);const [v,r,c]=fakeHour(x);o.t.push(x);o.temp.push(v);o.rain.push(r);o.code.push(c)}
+  const o={t:[],rain:[],code:[],s:{},sun:{}}; SK.forEach(k=>o.s[k]=[]);
+  for(let x=a;x<b;x+=H){if(x%DAY===0)o.sun[x]=sunApprox(x,55.75,12.5);const [v,r,c]=fakeHour(x);o.t.push(x);o.rain.push(r);o.code.push(c);
+    const k=x/H, w=Math.max(.4,3+2*Math.sin(k/31)+1.4*Math.sin(k/7+1)), cl=c>=61?95:c===3?90:c===2?60:c===1?25:5;
+    o.s.temp.push(v); o.s.wind.push(w); o.s.gust.push(w*1.8); o.s.feel.push(v-.7*w); o.s.dir.push((200+140*Math.sin(k/50)+360)%360);
+    o.s.pres.push(752+7*Math.sin(k/90)+4*Math.sin(k/37+2)); o.s.hum.push(Math.min(100,Math.max(25,85-3*(v-6)+(c>=61?10:0)))); o.s.cloud.push(cl)}
   return o;
 }
 function parse(j,lat){
   const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
-  const t=j.hourly.time.map(P), keep=t.map((_,i)=>j.hourly.temperature_2m[i]!=null), f=a=>a.filter((_,i)=>keep[i]);
+  const h=j.hourly, t=h.time.map(P), keep=t.map((_,i)=>h.temperature_2m[i]!=null), f=a=>a.filter((_,i)=>keep[i]);
   const sun={}; (j.daily?.time||[]).forEach((d,i)=>{const day=Date.parse(d+'T00:00:00Z'),r=j.daily.sunrise[i],st=j.daily.sunset[i];sun[day]=r&&st?[P(r),P(st)]:sunApprox(day,lat,12)});
-  return regular({t:f(t),temp:f(j.hourly.temperature_2m),rain:f(j.hourly.precipitation).map(v=>v||0),code:f(j.hourly.weather_code),sun});
+  const s={}; SK.forEach(k=>s[k]=f(series(h,k,t.length)));
+  return regular({t:f(t),s,rain:f(h.precipitation).map(v=>v||0),code:f(h.weather_code),sun});
 }
 // the chart and the cursor both assume one reading per hour with no gaps: drop repeated hours (clock change),
 // fill missing ones (clock change, empty readings) from their neighbours
 function regular(o){
   if(!o.t.length) return o;
-  const a=o.t[0], n=Math.round((o.t[o.t.length-1]-a)/H)+1, r={t:new Array(n),temp:new Array(n).fill(null),rain:new Array(n).fill(0),code:new Array(n).fill(null),sun:o.sun};
-  for(let i=0;i<o.t.length;i++){const k=Math.round((o.t[i]-a)/H); if(k<0||k>=n||r.temp[k]!=null) continue; r.temp[k]=o.temp[i]; r.rain[k]=o.rain[i]; r.code[k]=o.code[i]}
-  let last=null;
-  for(let k=0;k<n;k++){r.t[k]=a+k*H;
-    if(r.temp[k]==null){let j=k+1; while(j<n&&r.temp[j]==null) j++; const next=j<n?r.temp[j]:last, prev=last??next; r.temp[k]=prev+(next-prev)*(1/(j-k+1)); r.code[k]=r.code[k-1]??null}
-    last=r.temp[k]}
+  const a=o.t[0], n=Math.round((o.t[o.t.length-1]-a)/H)+1, r={t:new Array(n),s:{},rain:new Array(n).fill(0),code:new Array(n).fill(null),sun:o.sun};
+  SK.forEach(c=>r.s[c]=new Array(n).fill(null)); const T=r.s.temp;
+  for(let i=0;i<o.t.length;i++){const k=Math.round((o.t[i]-a)/H); if(k<0||k>=n||T[k]!=null) continue; SK.forEach(c=>r.s[c][k]=o.s[c][i]); r.rain[k]=o.rain[i]; r.code[k]=o.code[i]}
+  for(const c of SK){const v=r.s[c]; let last=null;
+    for(let k=0;k<n;k++){
+      if(v[k]==null){let j=k+1; while(j<n&&v[j]==null) j++; const next=j<n?v[j]:last, prev=last??next; v[k]=prev==null?null:prev+(next-prev)*(1/(j-k+1))}
+      last=v[k]}}
+  for(let k=0;k<n;k++){r.t[k]=a+k*H; if(r.code[k]==null&&k) r.code[k]=r.code[k-1]}
   return r;
 }
 const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten years (Open-Meteo archive goes back to 1940)
@@ -259,40 +308,40 @@ async function om(u){
 // 1) the last quick answer for this place from the phone's memory (if under three hours old) is drawn right away;
 // 2) a small request — yesterday, today, tomorrow and the day after, hourly and every 15 minutes — replaces it in a moment;
 // 3) three months back and two weeks ahead arrive in the background. Scrolling into what is not there yet shows that it is loading.
-const WX='https://api.open-meteo.com/v1/forecast', VARS='temperature_2m,precipitation,weather_code';
+const WX='https://api.open-meteo.com/v1/forecast', VARS=Object.values(SER).join(',')+',precipitation,weather_code';
 async function getJ(u){const j=await (await om(u)).json(); if(!j.hourly) throw new Error('api'); return j}
 function setData(where,j,partial){
   const keep=D&&!D.sample&&D.where&&D.where.lat===where.lat&&D.where.lon===where.lon&&vc!=null?vc:null;
-  D=parse(j,where.lat); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
+  D=parse(j,where.lat); useCols(D); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
   LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=dayOf(D.now)-HIST_DAYS*DAY;
   D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); D.q=null;
-  const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); setQ(P(m.time[0]),m.temperature_2m.slice(),m.precipitation||[],m.weather_code||[])}
+  const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); const qs={}; SK.forEach(k=>qs[k]=series(m,k,m.time.length)); setQ(P(m.time[0]),qs,m.precipitation||[],m.weather_code||[])}
   if(keep!=null){center=keep;clamp();draw()} else {yMin=null; goToday()}
 }
 function mergeFull(j){ // the long range arrives: same hours, more of them; the view stays where it is
   const o=parse(j,D.where.lat), from=D.t[0];
-  ['t','temp','rain','code'].forEach(k=>D[k]=o[k]); Object.assign(D.sun,o.sun); D.partial=false;
+  ['t','rain','code','s'].forEach(k=>D[k]=o[k]); useCols(D); Object.assign(D.sun,o.sun); D.partial=false;
   rebuildDays(); clamp(); fadeOld(from); draw();
 }
 async function load(where, announce){
   const first=!D; if(first) $('when').textContent='Загрузка…';
   $('city').value=where.name;
-  const key='wx:'+where.lat+','+where.lon; let shown=false, ok=true;
+  const key='wx2:'+where.lat+','+where.lon; let shown=false, ok=true;
   try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
   if(!shown) $('chartbox').classList.add('loading');
   try{
-    const j=await getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&minutely_15=${VARS}&daily=sunrise,sunset&past_days=1&forecast_days=3&past_minutely_15=192&forecast_minutely_15=192&timezone=auto`);
+    const j=await getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&minutely_15=${VARS}&daily=sunrise,sunset&past_days=1&forecast_days=3&past_minutely_15=192&forecast_minutely_15=192&wind_speed_unit=ms&timezone=auto`);
     store.set(key,JSON.stringify({at:Date.now(),j})); setData(where,j,true); shown=true;
   }catch(e){ if(!shown) ok=false }
   if(ok){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
     const W0=where;
-    getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&timezone=auto`)
+    getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`)
       .then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw()}});
   } else {
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
-    D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
+    D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); useCols(D); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
     rebuildDays(); D.q=null; D.limit=dayOf(D.now)-HIST_DAYS*DAY; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
     yMin=null; goToday(); loadQ(where);
     if(window.top===window) $('note').textContent='Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
@@ -306,17 +355,18 @@ async function load(where, announce){
   if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
 }
 // 15-minute readings for yesterday, today and tomorrow (native in Central Europe and North America, interpolated from hourly elsewhere)
-function hourlyAt(t){const k=(t-D.t[0])/H, i=Math.max(0,Math.min(D.t.length-2,Math.floor(k))), u=Math.max(0,Math.min(1,k-i)); return D.temp[i]+(D.temp[i+1]-D.temp[i])*u}
-function setQ(t0,temp,rain,code){
-  const n=temp.length; for(let k=0;k<n;k++) if(temp[k]==null) temp[k]=hourlyAt(t0+k*Q);
-  D.q={t0,n,end:t0+(n-1)*Q,temp,rain:rain.map(v=>v||0),code}; draw();
+function hourlyAt(t,a=D.temp){const k=(t-D.t[0])/H, i=Math.max(0,Math.min(D.t.length-2,Math.floor(k))), u=Math.max(0,Math.min(1,k-i)); return a[i]+(a[i+1]-a[i])*u}
+function setQ(t0,s,rain,code){ // s: one array per series, like D.s
+  const n=s.temp.length; SK.forEach(c=>{const a=s[c]; for(let k=0;k<n;k++) if(a[k]==null) a[k]=hourlyAt(t0+k*Q,D.s[c])});
+  D.q={t0,n,end:t0+(n-1)*Q,s,rain:rain.map(v=>v||0),code}; useCols(D); draw();
 }
+function useCols(o){o.temp=o.s[metric]; if(o.q) o.q.temp=o.q.s[metric]} // the series on screen
 async function loadQ(where){
   const DD=D, d0=dayOf(D.now);
   if(D.sample){ // example data: hourly line with a little extra detail
-    const t0=d0-DAY, n=3*96, temp=[], rain=[], code=[];
-    for(let k=0;k<n;k++){const t=t0+k*Q, i=idxAt(t); temp.push(hourlyAt(t)+0.35*Math.sin(t/Q*1.3)); rain.push(D.rain[i]/4); code.push(D.code[i])}
-    setQ(t0,temp,rain,code); return;
+    const t0=d0-DAY, n=3*96, qs={}, rain=[], code=[]; SK.forEach(c=>qs[c]=[]);
+    for(let k=0;k<n;k++){const t=t0+k*Q, i=idxAt(t); SK.forEach(c=>qs[c].push(hourlyAt(t,D.s[c])+(c==='temp'?0.35*Math.sin(t/Q*1.3):0))); rain.push(D.rain[i]/4); code.push(D.code[i])}
+    setQ(t0,qs,rain,code); return;
   }
 }
 const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
@@ -359,13 +409,14 @@ async function extendBack(){
     let o;
     if(D.sample){await new Promise(r=>setTimeout(r,250)); o=fakeRange(start,end)}
     else{
-      const u=`https://archive-api.open-meteo.com/v1/archive?latitude=${LOC.lat}&longitude=${LOC.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=temperature_2m,precipitation,weather_code&daily=sunrise,sunset&timezone=auto`;
+      const u=`https://archive-api.open-meteo.com/v1/archive?latitude=${LOC.lat}&longitude=${LOC.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto`;
       o=parse(await (await om(u)).json(),LOC.lat);
     }
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');
-    ['t','temp','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k]));
-    if(D.t[cut]-D.t[cut-1]!==H){const m=regular(D);['t','temp','rain','code'].forEach(k=>D[k]=m[k])} // seam between archive and forecast
+    ['t','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k])); SK.forEach(k=>D.s[k]=o.s[k].slice(0,cut).concat(D.s[k]));
+    if(D.t[cut]-D.t[cut-1]!==H){const m=regular(D);['t','rain','code','s'].forEach(k=>D[k]=m[k])} // seam between archive and forecast
+    useCols(D);
     Object.assign(D.sun,o.sun); rebuildDays(); fadeOld(end);
   }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
   busy=false; applyPin(); draw();
@@ -400,8 +451,7 @@ function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=b
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
   let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanV*H*1.5,Math.min(D.fut,center+spanV*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
   if(lo>hi){lo=D.gl;hi=D.gh}
-  let mn=Math.floor((lo-3)/5)*5, mx=Math.ceil((hi+2.5)/5)*5; if(mx-mn<15){mx=mn+15}
-  return [mn,mx];
+  return M().lim(lo,hi);
 }
 function easeY(){
   const [a,b]=yTarget(); if(yMin==null){yMin=a;yMax=b;return}
@@ -411,7 +461,7 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-let drawQ=0, fade=null, vc=null, lastC=null, spd=0;
+let drawQ=0, swap=null, fade=null, vc=null, lastC=null, spd=0;
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   fade={from,e:0}; const t0=performance.now();
@@ -460,7 +510,7 @@ function render(){
   const xn=X(D.now), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
   // horizontal grid
   g.lineWidth=1;
-  const stepY=(yMax-yMin)>40?10:5, yFirst=Math.ceil(yMin/stepY)*stepY;
+  const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;g.strokeStyle=v===0?C['grid-strong']:C.grid;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
   // hour ticks + midnight lines
   const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
@@ -524,14 +574,14 @@ function render(){
   });
   // y labels
   g.textBaseline='middle';g.font='500 11px '+MONO;
-  for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtT(v),2,y,C.muted,C.paper)}
+  for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
   // extremes: per day when there is room, otherwise for the whole visible window
   const ext=[];
   if(dayW>=40){for(let d=d0;d<=t1;d+=DAY){let mx=-1,mn=-1;for(let i=i0;i<=i1;i++){if(D.t[i]<d||D.t[i]>=d+DAY)continue;if(mx<0||D.temp[i]>D.temp[mx])mx=i;if(mn<0||D.temp[i]<D.temp[mn])mn=i}
       if(mx>=0){const xa=X(D.t[mx]),xb=X(D.t[mn]);if(xa>=0&&xa<=W)ext.push([mx,1]);if(xb>=0&&xb<=W)ext.push([mn,-1])}}}
   else{let mx=-1,mn=-1;for(let i=i0;i<=i1;i++){const x=X(D.t[i]);if(x<0||x>W)continue;if(mx<0||D.temp[i]>D.temp[mx])mx=i;if(mn<0||D.temp[i]<D.temp[mn])mn=i}if(mx>=0){ext.push([mx,1],[mn,-1])}}
   g.font='600 11px '+MONO;g.textBaseline='middle';
-  ext.forEach(([i,s])=>{const x=X(D.t[i]),y=Y(D.temp[i]),c=s>0?C.hot:C.cold,txt=fmtT(D.temp[i]),w=g.measureText(txt).width;
+  ext.forEach(([i,s])=>{const x=X(D.t[i]),y=Y(D.temp[i]),c=s>0?C.hot:C.cold,txt=fmtS(D.temp[i]),w=g.measureText(txt).width;
     g.beginPath();g.arc(x,y,3,0,7);g.fillStyle=c;g.fill();
     const tx=Math.min(W-w-3,Math.max(3,x-w/2)), ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
     tagText(g,txt,tx,ty,c,C.paper)});
@@ -559,6 +609,7 @@ function render(){
     g.fillStyle=more?C.ink:C.muted;g.font='600 13px '+MONO;
     const l=D.partial?['Загружаем','прогноз']:more?(ready?['Отпустите —','покажем неделю']:['Ещё неделя','тяните дальше']):['Конец прогноза','дальше данных нет'];
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
+  if(swap){g.save();g.globalAlpha=1-swap.e;g.drawImage(swap.img,0,0,W,Ht);g.restore()} // the previous mode fades out
   // center cursor
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
@@ -580,44 +631,43 @@ function trio(i,isNow,tq,yr){
   if(yr){ // year view: daily means of yesterday, today and tomorrow
     const m=ms=>{const r=dayRec(ms);return r?r.sum/r.n:NaN}, d=dayOf(D.now), n=m(d), y=m(d-DAY), t=m(d+DAY);
     $('triWhen').textContent=dLabel(d); $('triTop').textContent='Сегодня · средняя за день';
-    $('triN').textContent=fmtT(n); $('triY').textContent=fmtT(y); $('triT').textContent=fmtT(t);
-    const deg=v=>Math.round(Math.abs(v))+'°', word=v=>v>0?'теплее':'холоднее', dy=n-y, dt=t-n;
-    $('triSay1').textContent=Math.abs(dy)<1?'Так же, как вчера.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
-    $('triSay2').textContent=Math.abs(dt)<1?'Завтра в среднем — так же.':`Завтра в среднем — на ${deg(dt)} ${word(dt)}.`;
+    bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t);
+    const mt=M(), deg=v=>mt.num(Math.abs(v)).replace(/^[+−]/,'')+mt.unit, word=v=>v>0?mt.more:mt.less, dy=n-y, dt=t-n, same=v=>Math.abs(v)<mt.th[0];
+    $('triSay1').textContent=same(dy)?'Так же, как вчера.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
+    $('triSay2').textContent=same(dt)?'Завтра в среднем — так же.':`Завтра в среднем — на ${deg(dt)} ${word(dt)}.`;
     return;
   }
   const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
   const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
   $('triWhen').textContent=dLabel(ms)+' · '+(tq!=null?hm(ms):hh(ms));
-  $('triTop').textContent=(isNow?'Сейчас':ms>D.now?'Сегодня · прогноз':'Сегодня')+(WC[D.code[i]]?' · '+WC[D.code[i]]:'');
-  $('triN').textContent=fmtT(n); $('triY').textContent=fmtT(y); $('triT').textContent=fmtT(t);
-  const deg=d=>{const a=Math.round(Math.abs(d));return a+'°'}, word=d=>d>0?'теплее':'холоднее';
+  $('triTop').textContent=(isNow?'Сейчас':ms>D.now?'Сегодня · прогноз':'Сегодня')+(metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:'');
+  bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t);
+  const m=M(), deg=d=>m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit, word=d=>d>0?m.more:m.less, same=d=>Math.abs(d)<m.th[0];
   const dy=n-y, dt=t-n;
-  const p1=Math.abs(dy)<1?'Так же, как вчера в это время.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
-  const p2=Math.abs(dt)<1?'Завтра в это время — так же.':`Завтра в это время — на ${deg(dt)} ${word(dt)}.`;
+  const p1=same(dy)?'Так же, как вчера в это время.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
+  const p2=same(dt)?'Завтра в это время — так же.':`Завтра в это время — на ${deg(dt)} ${word(dt)}.`;
   $('triSay1').textContent=p1; $('triSay2').textContent=p2;
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
   const val=yr?rec.sum/rec.n:tq!=null?D.q.temp[qIdx(tq)]:D.temp[i];
-  $('temp').textContent=fmtT(val);
+  bigNum($('temp'),val);
   $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
-  const tg=rel+(yr?' · средняя за день':WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
-  $('cond').textContent=`${fmtT(rec.lo)}…${fmtT(rec.hi)} · ${rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо'}`;
+  const tg=rel+(yr?' · средняя за день':metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
+  const rain=rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо';
+  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])} · ${rain}`:`${M().num(rec.lo)}…${fmtV(rec.hi)} · ${rain}`;
   // difference with the pin, or with the current hour (the current day's mean in the year view)
   const ref=pin!=null?idxAt(pin):idxAt(D.now), el=$('delta'); el.textContent='';
   const rr=dayRec(D.t[ref]), refVal=yr?rr.sum/rr.n:(tq!=null&&pin==null&&inQ(D.now))?D.q.temp[qIdx(D.now)]:D.temp[ref];
-  const dv=val-refVal, b=document.createElement('b'); b.textContent='Δ '+fmtD(dv); el.append(b);
-  const ad2=Math.abs(dv), w=dv>0?'теплее':'холоднее';
-  const vt=ad2<1?'Так же':ad2<3?'Чуть '+w:ad2<6?w[0].toUpperCase()+w.slice(1):ad2<10?'Заметно '+w:ad2<15?'Сильно '+w:'Намного '+w;
-  const vd=$('verdict'); vd.textContent=vt; vd.className='verdict'+(ad2<1?'':dv>0?' warm':' cool');
+  const dv=val-refVal, b=document.createElement('b'); b.textContent='Δ '+fmtDV(dv); el.append(b);
+  const vd=$('verdict'); vd.textContent=verdictOf(dv); vd.className='verdict'+(Math.abs(dv)<M().th[0]?'':dv>0?' warm':' cool');
   if(pin!=null){
     const rt=D.t[ref], pd=REL[relDay(rt)], dt=new Date(rt);
     const lab=(pd||dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+withYear(rt))+(yr?'':', '+hh(rt));
     el.append((yr?' к средней за ':' к ')+lab+' ');
     const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
-  } else el.append(yr?' к средней за сегодня':' к текущей');
+  } else el.append(yr?' к средней за сегодня':' к '+(M().cur||'текущей'));
   const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
 }
 function setPin(ms){pin=ms;pinWant=null;store.set('pin',ms==null?null:String(ms));draw()}
@@ -703,6 +753,34 @@ function setZoom(h){
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>goToday());
+// what the chart shows: temperature, feels-like, wind, pressure, humidity, clouds. Kept on this device, shared with three.html
+function useMetric(k){
+  if(!METRICS[k]||k===metric) return;
+  if(D&&chart.width&&!matchMedia('(prefers-reduced-motion: reduce)').matches){ // the old picture fades while the new one is drawn under it
+    const img=document.createElement('canvas'); img.width=chart.width; img.height=chart.height; img.getContext('2d').drawImage(chart,0,0);
+    const t0=performance.now(); swap={img,e:0};
+    const step=now=>{if(!swap||swap.img!==img) return; const q=Math.min(1,(now-t0)/320); swap.e=q*q*(3-2*q); render(); if(q<1) requestAnimationFrame(step); else {swap=null; render()}};
+    requestAnimationFrame(step);
+  }
+  metric=k; store.set('metric',k); showMetric();
+  if(D){useCols(D); rebuildDays(); yMin=null; draw()}
+}
+function showMetric(){const m=M(); $('modeName').textContent=m.name; $('modeBtn').setAttribute('aria-label','Показывать: '+m.name.toLowerCase()+'. Сменить');
+  chart.setAttribute('aria-label','График по часам: '+m.name.toLowerCase()+'; тяните влево и вправо');
+  [...$('modes').children].forEach(li=>li.setAttribute('aria-checked',String(li.dataset.k===metric)))}
+function modesOpen(on){const ul=$('modes'); ul.hidden=!on; $('modeBtn').setAttribute('aria-expanded',String(on)); if(on) ul.querySelector('[aria-checked="true"]')?.focus()}
+Object.entries(METRICS).forEach(([k,m])=>{const li=document.createElement('li'); li.setAttribute('role','option'); li.dataset.k=k; li.tabIndex=-1;
+  const dot=document.createElement('i'), tx=document.createElement('div'), b=document.createElement('b'), sp=document.createElement('span');
+  b.textContent=m.name; sp.textContent=m.hint; tx.append(b,sp); li.append(dot,tx);
+  li.addEventListener('click',()=>{modesOpen(false); useMetric(k); $('modeBtn').focus()});
+  li.addEventListener('keydown',e=>{const l=[...$('modes').children], i=l.indexOf(li);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault(); l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length].focus()}
+    else if(e.key==='Enter'||e.key===' '){e.preventDefault(); li.click()}
+    else if(e.key==='Escape'){modesOpen(false); $('modeBtn').focus()}});
+  $('modes').append(li)});
+$('modeBtn').addEventListener('click',()=>modesOpen($('modes').hidden));
+document.addEventListener('pointerdown',e=>{if(!$('modes').hidden&&!e.target.closest('.mode')) modesOpen(false)});
+showMetric();
 $('pinBtn').addEventListener('click',()=>{if(!D)return;setPin(pin!=null?null:D.t[idxAt(vc??center)])});
 // suggestions while typing: up to six places with region and country
 let sugg=[], suggSel=-1, suggT=0, suggQ='';
