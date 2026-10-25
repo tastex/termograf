@@ -425,10 +425,10 @@ async function extendBack(){
 /* ---------- view ---------- */
 const maxC=()=>D.fut-H, minC=()=>D.t[0]; // the first and last loaded hours may both reach the cursor line
 function clamp(){center=Math.min(maxC(),Math.max(minC(),center))}
-function goToday(){ // cursor on the current hour
+function goToday(){ // cursor on the reading that stands for "now" (the same one the now line is drawn at)
   fzOn=false;slowMs=0;
   D.now=Date.now()+D.off; // the page may have been asleep for hours (home-screen app): use the clock, not the load time
-  center=D.t[0]+Math.floor((D.now-D.t[0])/H)*H; pull=0; clamp(); draw();
+  center=snapNow?snapNow(D.now):D.t[idxAt(D.now)]; pull=0; clamp(); draw();
 }
 function idxAt(ms){return Math.max(0,Math.min(D.t.length-1,Math.round((ms-D.t[0])/H)))}
 function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
@@ -461,7 +461,8 @@ function easeY(){
       if(Math.abs(ta-yMin)<.05&&Math.abs(tb-yMax)<.05){yMin=ta;yMax=tb;yRaf=0;render();return}
       render();yRaf=requestAnimationFrame(step)};yRaf=requestAnimationFrame(step)}
 }
-let drawQ=0, swap=null, fade=null, vc=null, lastC=null, spd=0;
+let drawQ=0, swap=null, fade=null, vc=null, lastC=null, spd=0, snapNow=null;
+const snapPx=x=>Math.round(x)+.5; // every 1px vertical line (hour ticks, cursor, now, pin) lands on the same pixel grid
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   fade={from,e:0}; const t0=performance.now();
@@ -484,6 +485,7 @@ function render(){
   // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
   // so the cursor sits exactly on a reading; swiped fast, the chart runs smoothly and the dot glides along the curve
   const yrv=pph*24<4, snapAt=t=>yrv?dayOf(t)+12*H:fine&&inQ(t)?D.q.t0+qIdx(t)*Q:D.t[idxAt(t)];
+  snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
@@ -507,7 +509,7 @@ function render(){
     if(X(s[1])-X(s[0])>=20) sunIcon(g,X((s[0]+s[1])/2),48,C.muted);
     const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) moonIcon(g,X((s[1]+ne)/2),48,C.muted);}}
   // future
-  const xn=X(D.now), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
+  const xn=X(nowAt), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
   // horizontal grid
   g.lineWidth=1;
   const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
@@ -516,7 +518,7 @@ function render(){
   const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
   for(let ms=firstH;ms<=t1;ms+=hStep*H){
-    const x=Math.round(X(ms))+.5, mid=new Date(ms).getUTCHours()===0;
+    const x=snapPx(X(ms)), mid=new Date(ms).getUTCHours()===0;
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
     if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
@@ -586,7 +588,7 @@ function render(){
     const tx=Math.min(W-w-3,Math.max(3,x-w/2)), ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
     tagText(g,txt,tx,ty,c,C.paper)});
   // now marker
-  if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(xn+.5,top-8);g.lineTo(xn+.5,bot);g.stroke();g.setLineDash([]);
+  if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(snapPx(xn),top-8);g.lineTo(snapPx(xn),bot);g.stroke();g.setLineDash([]);
     g.textBaseline='alphabetic';g.font='500 11px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
   // pin marker
   if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
@@ -613,16 +615,16 @@ function render(){
   // center cursor
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
-  const dprC=devicePixelRatio||1, cx=(Math.floor(X(vc)*dprC)+.5)/dprC, cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
-  g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, snapped to a device pixel
+  const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
+  g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, on the same pixel grid as the hour ticks
   g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
   readout(ci,yr,tq); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
-  const nowH=D.t[0]+Math.floor((D.now-D.t[0])/H)*H, atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
-  if(atNow) trio(ci,tq!=null?tq===D.q.t0+qIdx(D.now)*Q:ci===idxAt(nowH),tq,yr);
+  const atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
+  if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
   document.querySelector('header').classList.toggle('now',atNow);
-  $('today').disabled=Math.abs(center-(D.t[0]+Math.floor((D.now-D.t[0])/H)*H))<H/2; // only when the cursor already stands on the current hour
+  $('today').disabled=Math.abs(center-nowAt)<(yrv?DAY:fine?Q:H)/2; // only when the cursor already stands on the current reading
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
