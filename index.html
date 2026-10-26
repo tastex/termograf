@@ -546,8 +546,7 @@ function render(){
   snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // below a quick swipe the view always stands on a reading (it steps from one to the next), so nothing shifts once the finger stops
-  if(vc==null||reduce||spd<=3||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*0.6;
+  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
