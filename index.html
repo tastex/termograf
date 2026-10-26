@@ -199,6 +199,13 @@ let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0; // spanV: hours actually 
 let warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
+// the moment and the scale on screen, shared by the three pages, so switching between them keeps both (for twelve hours):
+// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today
+const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<12*3600e3&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
+const nearest=(d,opts)=>opts.reduce((a,b)=>Math.abs(Math.log(b/d))<Math.abs(Math.log(a/d))?b:a);
+function keepView(f){const save=()=>{const v=f(); if(v) store.set('view',JSON.stringify({...v,at:Date.now()}))};
+  addEventListener('pagehide',save); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') save()});
+  document.querySelectorAll('.go a').forEach(a=>a.addEventListener('click',save))}
 function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
 function fmtT(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'}
 function fmtD(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+'°'}
@@ -321,7 +328,7 @@ function setData(where,j,partial){
 function mergeFull(j){ // the long range arrives: same hours, more of them; the view stays where it is
   const o=parse(j,D.where.lat), from=D.t[0];
   ['t','rain','code','s'].forEach(k=>D[k]=o[k]); useCols(D); Object.assign(D.sun,o.sun); D.partial=false;
-  rebuildDays(); clamp(); fadeOld(from); draw();
+  rebuildDays(); clamp(); fadeOld(from); draw(); applyView();
 }
 async function load(where, announce){
   const first=!D; if(first) $('when').textContent='Загрузка…';
@@ -337,7 +344,7 @@ async function load(where, announce){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
     const W0=where;
     getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`)
-      .then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw()}});
+      .then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw();applyView()}});
   } else {
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
@@ -348,6 +355,7 @@ async function load(where, announce){
     $('note').hidden=false;
   }
   if(first||announce){pin=null; const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin()}
+  if(announce) viewWant=null; applyView();
   // times are the city's local time; say so when it differs from the phone's
   const devOff=-new Date().getTimezoneOffset()*60000, hrs=D.off/H, sgn=hrs>=0?'+':'−', tzs='UTC'+sgn+Math.abs(hrs).toString().replace('.',',');
   $('tz').textContent=D.off!==devOff?'Время — местное для города ('+tzs+') · ':'';
@@ -390,6 +398,8 @@ async function hereByIp(){ // no permission prompt: approximate city from the ne
 }
 let toastT=0;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?5200:2600)}
+let viewWant=VIEW_IN&&!VIEW_IN.now?VIEW_IN.t:null; // the moment another page was showing, until the hours around it are here
+function applyView(){if(viewWant==null||!D) return; if(viewWant>=D.t[0]||D.t[0]<=D.limit){center=viewWant;viewWant=null;clamp();draw()} else extendBack()}
 function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 function rebuildDays(){ // one record per day, so wide views and the overview never walk every hour while scrolling
@@ -419,7 +429,7 @@ async function extendBack(){
     useCols(D);
     Object.assign(D.sun,o.sun); rebuildDays(); fadeOld(end);
   }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
-  busy=false; applyPin(); draw();
+  busy=false; applyPin(); applyView(); draw();
 }
 
 /* ---------- view ---------- */
@@ -465,8 +475,8 @@ let drawQ=0, swap=null, fade=null, vc=null, lastC=null, spd=0, snapNow=null;
 const snapPx=x=>Math.round(x)+.5; // every 1px vertical line (hour ticks, cursor, now, pin) lands on the same pixel grid
 function fadeOld(from){ // older data that just arrived fades in instead of popping up
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  fade={from,e:0}; const t0=performance.now();
-  const step=now=>{const k=Math.min(1,(now-t0)/350); fade.e=1-Math.pow(1-k,3); render(); if(k<1) requestAnimationFrame(step); else fade=null};
+  const f=fade={from,e:0}, t0=performance.now(); // a second year can arrive before the first has faded in
+  const step=now=>{const k=Math.min(1,(now-t0)/350); f.e=1-Math.pow(1-k,3); render(); if(k<1) requestAnimationFrame(step); else if(fade===f) fade=null};
   requestAnimationFrame(step);
 }
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
@@ -707,7 +717,7 @@ function drawOv(C){
 
 /* ---------- interaction ---------- */
 let drag=null;
-box.addEventListener('pointerdown',e=>{if(!D)return;cancelAnimationFrame(raf);drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
+box.addEventListener('pointerdown',e=>{if(!D)return;cancelAnimationFrame(raf);viewWant=null;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
 window.addEventListener('pointermove',e=>{if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
@@ -754,7 +764,7 @@ function setZoom(h){
   spanH=h;vc=null;spd=0;lastC=null;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
-$('today').addEventListener('click',()=>goToday());
+$('today').addEventListener('click',()=>{viewWant=null;goToday()});
 // what the chart shows: temperature, feels-like, wind, pressure, humidity, clouds. Kept on this device, shared with three.html
 function useMetric(k){
   if(!METRICS[k]||k===metric) return;
@@ -829,7 +839,12 @@ addEventListener('resize',draw);
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
 new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
-setZoom(+(store.get('span')||72));
+const zIn=VIEW_IN?nearest(VIEW_IN.d,[3,7,30,365])*24:0;
+setZoom(zIn||+(store.get('span')||72));
+keepView(()=>{ if(!D) return null; // the scale and the day stay as they came while untouched here, so 3 days survive a trip through a page without them
+  const t=vc??center, now=viewWant==null&&Math.abs(t-(snapNow?snapNow(D.now):D.now))<H, same=VIEW_IN&&!now&&dayOf(t)===dayOf(VIEW_IN.t);
+  return {t:viewWant??(same?VIEW_IN.t:t), d:spanH===zIn?VIEW_IN.d:spanH/24, now};
+});
 // keep "now" current while the page is open, and refresh the data after a long sleep
 setInterval(()=>{if(D){D.now=Date.now()+D.off;draw()}},60000);
 document.addEventListener('visibilitychange',()=>{

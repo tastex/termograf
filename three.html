@@ -133,6 +133,13 @@ const FONT='"Golos Text",system-ui,sans-serif';
 const PARTS=[{k:'m',a:6,b:10},{k:'d',a:12,b:16},{k:'e',a:18,b:22}];
 const HIST=Math.round(10*365.25)*DAY; // ten years of archive, loaded a year at a time
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+// the moment and the scale on screen, shared by the three pages, so switching between them keeps both (for twelve hours):
+// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today
+const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<12*3600e3&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
+const nearest=(d,opts)=>opts.reduce((a,b)=>Math.abs(Math.log(b/d))<Math.abs(Math.log(a/d))?b:a);
+function keepView(f){const save=()=>{const v=f(); if(v) store.set('view',JSON.stringify({...v,at:Date.now()}))};
+  addEventListener('pagehide',save); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') save()});
+  document.querySelectorAll('.go a').forEach(a=>a.addEventListener('click',save))}
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
@@ -185,8 +192,12 @@ function setDays(list,now){ // keep the day under the cursor when the data is re
   const keep=days.length?days[Math.round(vc)]?.k:null;
   days=list; nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now))); limit=dayOf(now)-HIST; ovKey='';
   if(keep!=null){const i=days.findIndex(d=>d.k===keep); center=vc=i<0?todayI:i} else center=vc=todayI;
-  ys=null; draw();
+  ys=null; applyView(); draw();
 }
+let viewWant=VIEW_IN&&!VIEW_IN.now?dayOf(VIEW_IN.t):null; // the day another page was showing, until the archive around it is here
+function applyView(){ if(viewWant==null||!days.length) return;
+  let i=days.findIndex(d=>d.k>=viewWant); if(i<0) i=days.length-1; else if(days[i].k>viewWant&&i===0&&days[0].k>limit) return extendBack();
+  center=vc=i; viewWant=null; lastC=null; ys=null; draw()}
 function fakeHours(a,b){const t=[],s={}; MK.forEach(k=>s[k]=[]);
   for(let x=a;x<b;x+=H){const k=x/H, doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, hr=new Date(x).getUTCHours();
     const v=6+13*Math.cos((doy-200)/365*2*Math.PI)+3*Math.sin(k/41)+2*Math.sin(k/97+1)+1.5*Math.sin(k/13)+4.5*Math.cos((hr-15)/24*2*Math.PI), w=Math.max(.4,3+2*Math.sin(k/31)+1.4*Math.sin(k/7+1));
@@ -224,9 +235,9 @@ async function extendBack(){ // a year of archive when the view gets near the ol
       list=daysFrom(j.hourly.time.map(P),hourly(j),nowMs)}
     list=list.filter(d=>d.k<end); if(!list.length) throw 0;
     const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n;
-    if(!reduce()){fade={i:n,e:0}; const t0=performance.now(); const st=now=>{const k=Math.min(1,(now-t0)/320); fade.e=1-Math.pow(1-k,3); draw(); if(k<1) requestAnimationFrame(st); else fade=null}; requestAnimationFrame(st)}
+    if(!reduce()){const f=fade={i:n,e:0}, t0=performance.now(); const st=now=>{const k=Math.min(1,(now-t0)/320); f.e=1-Math.pow(1-k,3); draw(); if(k<1) requestAnimationFrame(st); else if(fade===f) fade=null}; requestAnimationFrame(st)}
   }catch(e){ limit=days[0].k } // archive unreachable: stop asking
-  loading=false; ovKey=''; draw();
+  loading=false; ovKey=''; draw(); applyView();
 }
 
 /* ---------- view ---------- */
@@ -374,7 +385,7 @@ function drawOv(C){
 
 /* ---------- interaction ---------- */
 const box=$('box'), rub=r=>{const W=box.clientWidth;return W*.3*(1-Math.exp(-r/(W*.6)))};
-box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);glide=false;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center};vel=0});
+box.addEventListener('pointerdown',e=>{if(!days.length)return;cancelAnimationFrame(raf);viewWant=null;glide=false;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center};vel=0});
 window.addEventListener('pointermove',e=>{if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
@@ -404,7 +415,7 @@ ov.addEventListener('pointerup',()=>{ovDrag=false;draw()});
 ov.addEventListener('pointercancel',()=>{ovDrag=false;draw()});
 function setSpan(d){span=d;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.d===d)));ys=null;spd=0;lastC=null;draw()}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
-$('today').addEventListener('click',goToday);
+$('today').addEventListener('click',()=>{viewWant=null;goToday()});
 function useMetric(k){if(!METRICS[k]||k===metric) return; metric=k; store.set('metric',k); days.forEach(d=>d.v=d.m[k]); ys=null; ovKey=''; showMetric(); draw()}
 function showMetric(){const m=M(); $('modeName').textContent=m.name; $('modeBtn').setAttribute('aria-label','Показывать: '+m.name.toLowerCase()+'. Сменить');
   [...$('modes').children].forEach(li=>li.setAttribute('aria-checked',String(li.dataset.k===metric)))}
@@ -423,7 +434,12 @@ document.addEventListener('pointerdown',e=>{if(!$('modes').hidden&&!e.target.clo
 showMetric();
 addEventListener('resize',()=>{ovKey='';draw()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKey='';draw()});
-setSpan([14,31,92,365].includes(span)?span:14);
+const zIn=VIEW_IN?nearest(VIEW_IN.d,[14,31,92,365]):0;
+setSpan(zIn||([14,31,92,365].includes(span)?span:14));
+keepView(()=>{ const i=Math.round(vc), k=days[i]?.k; if(k==null) return null; // what came from another page stays as it came while untouched here
+  const now=viewWant==null&&i===todayI, same=VIEW_IN&&!now&&dayOf(VIEW_IN.t)===k;
+  return {t:viewWant!=null||same?VIEW_IN.t:k+12*3600e3, d:span===zIn?VIEW_IN.d:span, now};
+});
 load();
 })();
 </script>
