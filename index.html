@@ -347,30 +347,31 @@ function setData(where,j,partial){
 }
 function useMin(j){const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); const qs={}; SK.forEach(k=>qs[k]=series(m,k,m.time.length)); setQ(P(m.time[0]),qs,m.precipitation||[],m.weather_code||[])}}
 function mergeFull(j){ // the long range arrives: same hours, more of them; the view stays where it is
-  const o=parse(j,D.where.lat), from=D.t[0];
-  ['t','rain','code','s'].forEach(k=>D[k]=o[k]); useCols(D); Object.assign(D.sun,o.sun); D.partial=false;
-  rebuildDays(); clamp(); fadeOld(from); draw(); applyView();
+  const o=parse(j,D.where.lat), from=D.t[0], old={t:D.t,rain:D.rain,code:D.code,s:D.s}, k=Math.round((o.t[0]-D.t[0])/H);
+  ['t','rain','code','s'].forEach(k=>D[k]=o[k]); if(k>0) prependHours(old,k); // archive already in front stays there
+  useCols(D); Object.assign(D.sun,o.sun); D.partial=false;
+  rebuildDays(); clamp(); if(from>=D.t[0]&&k<=0) fadeOld(from); draw(); applyView();
 }
 async function load(where, announce){
   const first=!D; if(first) $('when').textContent='Загрузка…';
   $('city').value=where.name;
   const key='wx2:'+where.lat+','+where.lon, FULL=`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
-  let shown=false, ok=true, fresh=false;
-  // back from another page within a quarter of an hour: both answers are in the phone's memory, so the chart is drawn once,
-  // complete, with nothing arriving afterwards to shift it
-  const full=await idb.get(FULL), young=c=>c&&Date.now()-c.at<15*60e3;
-  try{const c=JSON.parse(store.get(key)||'null');
-    if(young(c)&&young(full)&&full.j&&full.j.hourly){setData(where,full.j,false); useMin(c.j); shown=fresh=true}
-    else if(c&&Date.now()-c.at<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
-  $('chartbox').classList.toggle('loading',!shown);
+  let shown=false, ok=true, fresh=false, whole=false;
+  // The long range from the phone's memory (under three hours old) is drawn first, complete, with the day another page was showing;
+  // what comes from the network afterwards only refreshes the numbers in place. Under a quarter of an hour old, nothing is asked again
+  const full=await idb.get(FULL), age=c=>c?Date.now()-c.at:1e15; let c=null; try{c=JSON.parse(store.get(key)||'null')}catch(e){}
+  try{
+    if(full&&full.j&&full.j.hourly&&age(full)<3*3600e3){setData(where,full.j,false); if(age(c)<3*3600e3) useMin(c.j); shown=whole=true; fresh=age(full)<15*60e3&&age(c)<15*60e3}
+    else if(age(c)<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
+  $('chartbox').classList.toggle('loading',!shown); if(shown) applyView(); // straight onto the day another page was showing
   if(!fresh) try{
     const j=await getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&minutely_15=${VARS}&daily=sunrise,sunset&past_days=1&forecast_days=3&past_minutely_15=192&forecast_minutely_15=192&wind_speed_unit=ms&timezone=auto`);
-    store.set(key,JSON.stringify({at:Date.now(),j})); setData(where,j,true); shown=true;
+    store.set(key,JSON.stringify({at:Date.now(),j})); if(whole&&D.where===where) useMin(j); else setData(where,j,true); shown=true;
   }catch(e){ if(!shown) ok=false }
   if(ok){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
     const W0=where;
-    if(!fresh) cachedJ(FULL,15*60e3)
+    if(!fresh&&!(whole&&age(full)<15*60e3)) cachedJ(FULL,15*60e3)
       .then(j=>{if(!j.hourly) throw new Error('api'); return j}).then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw();applyView()}});
   } else {
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
@@ -426,7 +427,7 @@ async function hereByIp(){ // no permission prompt: approximate city from the ne
 let toastT=0;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?5200:2600)}
 let viewWant=VIEW_IN&&!VIEW_IN.now?VIEW_IN.t:null; // the moment another page was showing, until the hours around it are here
-function applyView(){if(viewWant==null||!D) return; if(viewWant>=D.t[0]||D.t[0]<=D.limit){center=viewWant;viewWant=null;clamp();draw()} else extendBack()}
+function applyView(){if(viewWant==null||!D) return; if(viewWant>=D.t[0]||D.t[0]<=D.limit){center=viewWant;viewWant=null;clamp();yMin=null;vc=null;draw()} else extendBack()} // the day from another page: the scale is set at once, not slid in
 function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 function rebuildDays(){ // one record per day, so wide views and the overview never walk every hour while scrolling
@@ -545,7 +546,8 @@ function render(){
   snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
+  // below a quick swipe the view always stands on a reading (it steps from one to the next), so nothing shifts once the finger stops
+  if(vc==null||reduce||spd<=3||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*0.6;
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
@@ -556,10 +558,13 @@ function render(){
   g.clearRect(0,0,W,Ht);
   const dayW=pph*24, d0=dayOf(t0)-DAY;
   // night bands
+  // sunrise and sunset are rounded to the readings the cursor can stand on (15 minutes where those are shown), so the night
+  // begins and ends on the same pixel as the cursor and the hour ticks
+  const onRd=t=>{const st=fine&&inQ(t)?Q:H; return Math.round(t/st)*st}, px=x=>Math.round(x);
   g.fillStyle=C.night; if(dayW>=20)
   for(let d=d0;d<=t1+DAY&&d<D.fut;d+=DAY){const s=D.sun[d];
     if(!s){continue}
-    const a=X(d),r=X(s[0]),st=X(s[1]),b=X(d+DAY);
+    const a=px(X(d)),r=px(X(onRd(s[0]))),st=px(X(onRd(s[1]))),b=px(X(d+DAY));
     if(r>a)g.fillRect(a,36,r-a,bot-36); if(b>st)g.fillRect(st,36,b-st,bot-36);}
   // sun / moon marks in the middle of each day and night
   {const d=dayOf(D.now),s=D.sun[d],n=D.sun[d+DAY]; if(s){ // only for the current day and the night after it
