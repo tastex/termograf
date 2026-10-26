@@ -107,7 +107,7 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
     </div>
     <div class="when">
       <button class="arr" id="prev" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-      <span id="date">Загрузка…</span>
+      <span id="date">Загружаем погоду…</span>
       <button class="arr" id="next" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
     </div>
   </header>
@@ -121,7 +121,7 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
     <div class="sp"></div>
     <button class="ibtn" id="zout" type="button" aria-label="Больше лет на экране" title="Больше лет на экране"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg></button>
     <button class="ibtn" id="zin" type="button" aria-label="Меньше лет, крупнее" title="Меньше лет, крупнее"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
-    <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+    <button class="ibtn" id="today" type="button" aria-label="Перейти к сегодня" title="Перейти к сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
   <div class="foot"><span>Город</span><b id="city">—</b>
     <div class="mode">
@@ -171,13 +171,41 @@ const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive
 (()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
 const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
 function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
-async function om(u){
+async function omTry(u){
   const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
   let skip=false; try{skip=sessionStorage.getItem('omDirect')==='no'}catch(e){}
   if(via&&skip) return fetch(via);
   try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
+// Open-Meteo lets each address make so many requests a minute, an hour and a day. When neither way gets through,
+// all three pages stop asking for a while and say why, instead of passing the empty archive off as its start.
+// The error's kind: minute, hour, day — which limit is used up; net — no answer at all
+const LIMIT_WAIT={minute:60e3,hour:10*60e3,day:60*60e3};
+const omErr=kind=>Object.assign(new Error(kind),{kind});
+async function om(u){
+  let lim=null; try{lim=JSON.parse(localStorage.getItem('omLimit')||'null')}catch(e){}
+  if(lim&&Date.now()<lim.until) throw omErr(lim.kind);
+  let r; try{r=await omTry(u)}catch(e){throw omErr('net')}
+  if(r.status===429){let why=''; try{why=(await r.clone().json()).reason||''}catch(e){}
+    const kind=/minut/i.test(why)?'minute':/hour/i.test(why)?'hour':'day';
+    try{localStorage.setItem('omLimit',JSON.stringify({kind,until:Date.now()+LIMIT_WAIT[kind]}))}catch(e){}
+    throw omErr(kind)}
+  if(r.status>=500) throw omErr('net');
+  return r;
+}
+// what the person reads when the archive stops: a sentence for the toast, two short lines for the chart's edge
+const LIMIT_SAY={
+  minute:['Архив на паузе: сервис погоды ограничил число запросов. Догрузим через минуту','Архив на паузе','догрузим через минуту'],
+  hour:['Архив на паузе: сервис погоды ограничил число запросов. Догрузим в течение часа','Архив на паузе','догрузим в течение часа'],
+  day:['Архив на паузе до завтра: сервис погоды ограничил число запросов на сегодня. Загруженное остаётся на графике','Архив на паузе','догрузим завтра'],
+  net:['Архив не загрузился. Проверьте интернет, и мы попробуем ещё раз','Архив не загрузился','проверьте интернет'],
+};
+// the request is still worth making later: a limit or no connection, not an archive that has nothing there
+const later=e=>!!(e&&LIMIT_SAY[e.kind]);
+// Ask the browser to keep the stored years even when the device runs short of space (a no on older browsers changes nothing)
+try{navigator.storage?.persist?.().catch(()=>{})}catch(e){}
+
 
 /* ---------- what is shown: the same choice as on the other two pages, kept on this device ---------- */
 // v: Open-Meteo daily mean; k: unit factor; same: closer than this to the normal is "as usual"; sat: this far off paints in full colour;
@@ -236,38 +264,51 @@ async function load(){
     .catch(()=>F0);
   await loadMetric(F0);
 }
-// ERA5 alone, not the default blend: since 2017 the blend switches to another model, and its winds and temperatures jump against the years before
-const archive1=(k,a,b)=>om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&models=era5&daily=${METRICS[k].v}&wind_speed_unit=ms&timezone=auto&start_date=${iso(a)}&end_date=${iso(b)}`)
-  .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; return pack(j,k)});
-const archive=(k,a,b,n=2)=>archive1(k,a,b).catch(e=>{if(!n) throw e; return new Promise(r=>setTimeout(r,1500)).then(()=>archive(k,a,b,n-1))}); // a long span of ERA5 can time out on a cold server, and comes through on the next try
+// ERA5 alone, not the default blend: since 2017 the blend switches to another model, and its winds and temperatures jump against the years before.
+// All six values come in one request: Open-Meteo counts a request by its days and by every ten values in it, so six cost
+// what one does, and switching what is shown takes nothing more from the network. The answer: {metric: {t0, v, off}}
+const archive1=(a,b)=>om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&models=era5&daily=${MK.map(k=>METRICS[k].v).join(',')}&wind_speed_unit=ms&timezone=auto&start_date=${iso(a)}&end_date=${iso(b)}`)
+  .then(r=>r.json()).then(j=>{if(!j.daily) throw 0; const s={}; MK.forEach(k=>s[k]=pack(j,k)); return s});
+const archive=(a,b,n=2)=>archive1(a,b).catch(e=>{if(!n||(e&&LIMIT_WAIT[e.kind])) throw e; return new Promise(r=>setTimeout(r,1500)).then(()=>archive(a,b,n-1))}); // a long span of ERA5 can time out on a cold server, and comes through on the next try
 const akey=k=>'yr:'+k+':'+W0.lat+','+W0.lon;
 const save=(k,A)=>store.set(akey(k),JSON.stringify({t0:A.t0,at:A.at,off:A.off,v:A.v}));
+const kept=k=>{try{return JSON.parse(store.get(akey(k))||'null')}catch(e){return null}};
+let err=null, wait=0; // why the archive pauses and until when
+function paused(e){ // a limit or no connection: say so, and do not ask again for a while
+  err=e.kind; wait=Date.now()+(LIMIT_WAIT[e.kind]||20e3); $('note').textContent=LIMIT_SAY[e.kind][0]; $('note').hidden=false;
+}
 let Acur=null;
 try{Object.keys(localStorage).forEach(k=>{if(/^yr(all|f):/.test(k)) localStorage.removeItem(k)})}catch(e){} // the blended archive of the first version of this page
 async function loadMetric(F0){ // the archive of the mode on screen: from memory, then what is missing
   const k=metric, my=++loadN, mine=()=>my===loadN&&k===metric;
   const Y=new Date().getUTCFullYear(), recent=Date.UTC(NORM[0]-1,11,1);
-  let A=null, F=F0??Fcur; try{A=JSON.parse(store.get(akey(k))||'null')}catch(e){}
+  let A=kept(k), F=F0??Fcur;
   Acur=A; if(A){if(!grow0) grow0=1; use(A,F)} else {vals=null; draw()} // what is in memory is shown as it is, without the years rising
   // a fresh copy needs nothing; an old one only its last two years; none at all — everything since the normal began.
+  // All six values are asked together, so the request covers the one that needs the most.
   // Older years come when the view gets near them: the whole archive at once is a heavy request for Open-Meteo
-  const need=!A||A.t0>recent?recent:Date.now()-A.at>20*H?Date.UTC(Y-1,0,1):null;
-  const [a,f]=await Promise.allSettled([need==null?Promise.resolve(null):archive(k,need,Date.now()),FP]);
+  const needOf=A=>!A||A.t0>recent?recent:Date.now()-A.at>20*H?Date.UTC(Y-1,0,1):null;
+  const need=MK.map(m=>needOf(m===k?A:kept(m))).reduce((a,b)=>b==null?a:a==null?b:Math.min(a,b),null);
+  const [a,f]=await Promise.allSettled([need==null?Promise.resolve(null):archive(need,Date.now()),FP]);
   if(!mine()) return;
-  if(a.value){A=merge(A,{...a.value,at:Date.now()}); save(k,A)}
+  if(a.value){const at=Date.now(); MK.forEach(m=>{const S=merge(m===k?A:kept(m),{...a.value[m],at}); save(m,S); if(m===k) A=S}); err=null}
   if(f.value) F=f.value; Fcur=F;
-  if(!A){ sample=true; const now=Date.now()+3*H; use(Acur=fakeDays(FIRST,dayOf(now)+16*DAY)); $('note').hidden=false; return }
-  sample=false; $('note').hidden=true; Acur=A; use(A,F);
+  const when={minute:'через минуту',hour:'в течение часа',day:'завтра'}[a.reason&&a.reason.kind];
+  if(!A){ sample=true; const now=Date.now()+3*H; use(Acur=fakeDays(FIRST,dayOf(now)+16*DAY));
+    $('note').textContent=when?`Сервис погоды ограничил число запросов, поэтому показан пример, а не настоящая погода. Обновите страницу ${when}`:window.top!==window?'Это пример, а не настоящая погода: внутри Claude страница не может загрузить архив. Настоящая — на tastex.github.io/termograf/years.html':'Архив не загрузился, поэтому показан пример. Проверьте интернет и обновите страницу';
+    $('note').hidden=false; return }
+  sample=false; $('note').hidden=true; if(a.reason&&later(a.reason)) paused(a.reason); Acur=A; use(A,F);
 }
 let noOlder='';
 async function extendBack(){ // thirty more years, back to 1940, when the view reaches the oldest loaded one
-  const k=metric, A=Acur; if(older||sample||!A||!W0||A.t0<=FIRST+7*DAY||noOlder===k) return;
+  const k=metric, A=Acur; if(older||sample||!A||!W0||A.t0<=FIRST+7*DAY||noOlder===k||Date.now()<wait) return;
   older=true; draw();
-  let P=null; try{P=await archive(k,Math.max(FIRST,Date.UTC(new Date(A.t0).getUTCFullYear()-30,0,1)),A.t0-DAY)}catch(e){}
+  let P=null, e0=null; try{P=await archive(Math.max(FIRST,Date.UTC(new Date(A.t0).getUTCFullYear()-30,0,1)),A.t0-DAY)}catch(e){e0=e}
   older=false;
-  if(k!==metric||A!==Acur) return draw();
-  if(!P){noOlder=k; return draw()} // archive unreachable: stop asking until the mode changes
-  Acur=merge(P,A); save(k,Acur); use(Acur,Fcur);
+  if(P){ MK.forEach(m=>{if(m===k) return; const S=kept(m); if(S) save(m,merge(P[m],S))}); if(err){err=null; $('note').hidden=true} } // the other values get the same years
+  if(k!==metric||A!==Acur){ if(P) save(k,merge(P[k],kept(k)||A)); return draw() }
+  if(!P){ if(later(e0)) paused(e0); else noOlder=k; return draw() } // a limit or no connection: later; anything else: the archive ends here
+  Acur=merge(P[k],A); save(k,Acur); use(Acur,Fcur);
 }
 
 /* ---------- periods: what one column holds and how it splits into points ---------- */
@@ -437,8 +478,9 @@ function render(){
   g.restore();
   // the far end of the archive and the one still loading
   // older years on their way
-  if(older){g.save();g.font='600 11px '+FONT;g.textBaseline='middle';const t='Загружаем годы раньше…', w=g.measureText(t).width;
-    g.fillStyle=C.paper;g.globalAlpha=.9;g.fillRect(GUT+2,TOP+4,w+10,18);g.globalAlpha=1;g.fillStyle=C.ink;g.fillText(t,GUT+7,TOP+13);g.restore()}
+  const wt=!older&&err&&Date.now()<wait; // older years wait out a limit or a lost connection
+  if(older||wt){g.save();g.font='600 11px '+FONT;g.textBaseline='middle';const t=older?'Загружаем более ранние годы…':LIMIT_SAY[err][1]+', '+LIMIT_SAY[err][2], w=g.measureText(t).width;
+    g.fillStyle=C.paper;g.globalAlpha=.9;g.fillRect(GUT+2,TOP+4,w+10,18);g.globalAlpha=1;g.fillStyle=wt?C.muted:C.ink;g.fillText(t,GUT+7,TOP+13);g.restore()}
   if(moving||Math.abs(vel)>.001) draw();
   readout(B,si,now);
   drawOv(B,C,si);
@@ -456,7 +498,7 @@ function readout(B,si,now){
   let rel;
   if(c.a<=today&&today<c.b) rel='Идёт сейчас'+(c.fc?' · с прогнозом':'');
   else{const ad=Math.round((today-c.b)/DAY)+1, n=Math.round(ad/365.25);
-    rel=ad<60?plur(Math.max(1,Math.round(ad/7)),NED)+' назад':ad<351?plur(Math.round(ad/30.4),MES)+' назад':n===1?'Год назад':n+(n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?' года назад':' лет назад')}
+    rel=ad<60?plur(Math.max(1,Math.round(ad/7)),NED)+' назад':ad<351?plur(Math.round(ad/30.4),MES)+' назад':n===1?'Год назад':n+(n%10===1&&n%100!==11?' год назад':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?' года назад':' лет назад')}
   $('rel').textContent=rel[0].toUpperCase()+rel.slice(1);
   $('date').textContent=periodName();
   const m=new Date(today).getUTCMonth(), cur=mode==='s'||(mode==='w'?am===m:seasonOf(am)===seasonOf(m));

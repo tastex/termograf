@@ -110,7 +110,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       <button class="part" data-j="1" aria-pressed="false"><div class="lbl d">День · 12–16</div><div class="num" id="n1">—</div><div class="dv" id="d1">&nbsp;</div></button>
       <button class="part" data-j="2" aria-pressed="false"><div class="lbl e">Вечер · 18–22</div><div class="num" id="n2">—</div><div class="dv" id="d2">&nbsp;</div></button>
     </div>
-    <div class="when" id="date">Загрузка…</div>
+    <div class="when" id="date">Загружаем погоду…</div>
   </header>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf/three.html</div>
   <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день. Тяните влево и вправо, нажмите на график, чтобы раскрыть его"></canvas></div>
@@ -119,7 +119,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     <div class="seg" role="group" aria-label="Масштаб">
       <button data-d="14">2 недели</button><button data-d="31">Месяц</button><button data-d="92">3 месяца</button><button data-d="365">Год</button>
     </div>
-    <button class="ibtn" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+    <button class="ibtn" id="today" type="button" aria-label="Перейти к сегодня" title="Перейти к сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
   <div class="foot"><span>Город</span><b id="city">—</b>
     <div class="mode">
@@ -167,7 +167,7 @@ const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:
 const DN=['день','дня','дней'], NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
 const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0;
+let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0, holes=[], err=null, wait=0; // holes: [from,to) ms of days not loaded yet; err, wait: why the archive pauses and until when
 let center=0, vc=0, wheelT=0, ovDrag=false, glide=false, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
 let focus=null, wNow=[1,1,1], wFrom=[1,1,1], wTo=[1,1,1], wT0=0;   // band weights; a tapped chart takes the whole height
 try{span=+store.get('x3span')||14}catch(e){}
@@ -179,16 +179,43 @@ const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive
 (()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
 const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
 function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
-async function om(u){
+async function omTry(u){
   const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
   let skip=false; try{skip=sessionStorage.getItem('omDirect')==='no'}catch(e){}
   if(via&&skip) return fetch(via);
   try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
+// Open-Meteo lets each address make so many requests a minute, an hour and a day. When neither way gets through,
+// all three pages stop asking for a while and say why, instead of passing the empty archive off as its start.
+// The error's kind: minute, hour, day — which limit is used up; net — no answer at all
+const LIMIT_WAIT={minute:60e3,hour:10*60e3,day:60*60e3};
+const omErr=kind=>Object.assign(new Error(kind),{kind});
+async function om(u){
+  let lim=null; try{lim=JSON.parse(localStorage.getItem('omLimit')||'null')}catch(e){}
+  if(lim&&Date.now()<lim.until) throw omErr(lim.kind);
+  let r; try{r=await omTry(u)}catch(e){throw omErr('net')}
+  if(r.status===429){let why=''; try{why=(await r.clone().json()).reason||''}catch(e){}
+    const kind=/minut/i.test(why)?'minute':/hour/i.test(why)?'hour':'day';
+    try{localStorage.setItem('omLimit',JSON.stringify({kind,until:Date.now()+LIMIT_WAIT[kind]}))}catch(e){}
+    throw omErr(kind)}
+  if(r.status>=500) throw omErr('net');
+  return r;
+}
+// what the person reads when the archive stops: a sentence for the toast, two short lines for the chart's edge
+const LIMIT_SAY={
+  minute:['Архив на паузе: сервис погоды ограничил число запросов. Догрузим через минуту','Архив на паузе','догрузим через минуту'],
+  hour:['Архив на паузе: сервис погоды ограничил число запросов. Догрузим в течение часа','Архив на паузе','догрузим в течение часа'],
+  day:['Архив на паузе до завтра: сервис погоды ограничил число запросов на сегодня. Загруженное остаётся на графике','Архив на паузе','догрузим завтра'],
+  net:['Архив не загрузился. Проверьте интернет, и мы попробуем ещё раз','Архив не загрузился','проверьте интернет'],
+};
+// the request is still worth making later: a limit or no connection, not an archive that has nothing there
+const later=e=>!!(e&&LIMIT_SAY[e.kind]);
+// Ask the browser to keep the stored years even when the device runs short of space (a no on older browsers changes nothing)
+try{navigator.storage?.persist?.().catch(()=>{})}catch(e){}
 // Responses kept in the phone's memory (IndexedDB) and shared by the main page and «утро, день, вечер»: both ask for
 // exactly the same addresses, so switching pages or coming back takes the forecast and the archive from here.
-// Each entry keeps for `keep` ms: the forecast for minutes, whole past years of archive for a month
+// Each entry keeps for `keep` ms: the forecast for minutes, past years of archive for months (see archKeep)
 const idb=(()=>{let p=null;
   const open=()=>p??=new Promise((res,rej)=>{const r=indexedDB.open('termograf',1); r.onupgradeneeded=()=>r.result.createObjectStore('r'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
   const tx=(m,f)=>open().then(db=>new Promise((res,rej)=>{const t=db.transaction('r',m), q=f(t.objectStore('r')); t.oncomplete=()=>res(q&&q.result); t.onerror=t.onabort=()=>rej(t.error)}));
@@ -199,7 +226,10 @@ async function cachedJ(u,keep){ // the stored answer while it keeps, otherwise t
   const c=await idb.get(u); if(c&&Date.now()-c.at<keep) return c.j;
   const j=await (await om(u)).json(); if(j&&j.hourly) idb.set(u,{at:Date.now(),keep,j}); return j;
 }
-const archKeep=(start,end)=>new Date(start).getUTCMonth()===0&&new Date(start).getUTCDate()===1&&new Date(end).getUTCMonth()===0&&new Date(end).getUTCDate()===1?30*DAY:2*DAY; // a whole calendar year does not change
+// A whole calendar year is kept for a year: the archive is final a few months after the fact, so only last year's
+// is kept for a month in case it is still settling. A part of a year (the one before the forecast) is kept for two days
+const archKeep=(start,end)=>{const a=new Date(start), b=new Date(end), whole=a.getUTCMonth()===0&&a.getUTCDate()===1&&b.getUTCMonth()===0&&b.getUTCDate()===1;
+  return !whole?2*DAY:b.getUTCFullYear()<new Date().getUTCFullYear()?365*DAY:30*DAY};
 /* ---------- data: one value per day for each part of the day ---------- */
 function daysFrom(t,s,now){ // s: hourly values for each metric; every day keeps them all (m), v is the one on screen
   const map=new Map();
@@ -211,13 +241,13 @@ function daysFrom(t,s,now){ // s: hourly values for each metric; every day keeps
 const hourly=j=>{const s={}; MK.forEach(k=>{const a=j.hourly[METRICS[k].v]||[], c=METRICS[k].k; s[k]=c?a.map(v=>v==null?v:v*c):a}); return s};
 function setDays(list,now){ // keep the day under the cursor when the data is replaced
   const keep=days.length?days[Math.round(vc)]?.k:null;
-  days=list; nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now))); limit=ARCHIVE_START; ovKey='';
+  days=list; nowMs=now; todayI=Math.max(0,days.findIndex(d=>d.k===dayOf(now))); limit=ARCHIVE_START; holes=[]; ovKey='';
   if(keep!=null){const i=days.findIndex(d=>d.k===keep); center=vc=i<0?todayI:i} else center=vc=todayI;
   ys=null; applyView(); draw();
 }
 let viewWant=VIEW_IN&&!VIEW_IN.now?dayOf(VIEW_IN.t):null; // the day another page was showing, until the archive around it is here
 function applyView(){ if(viewWant==null||!days.length) return;
-  let i=days.findIndex(d=>d.k>=viewWant); if(i<0) i=days.length-1; else if(days[i].k>viewWant&&i===0&&days[0].k>limit) return extendBack();
+  let i=days.findIndex(d=>d.k>=viewWant); if(i<0) i=days.length-1; else if(days[i].k>viewWant&&i===0&&days[0].k>limit) return reach(viewWant);
   center=vc=i; viewWant=null; lastC=null; ys=null; draw()}
 function fakeHours(a,b){const t=[],s={}; MK.forEach(k=>s[k]=[]);
   for(let x=a;x<b;x+=H){const k=x/H, doy=(x-Date.UTC(new Date(x).getUTCFullYear(),0,1))/DAY, hr=new Date(x).getUTCHours();
@@ -243,23 +273,58 @@ async function load(){
   if(c&&c.j&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}
   try{
     if(!shown||Date.now()-c.at>=15*60e3){const j=await cachedJ(u,0); if(!j.hourly) throw 0; use(j)}
-  }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,fs]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,fs,now),now); $('note').hidden=false } }
+  }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,fs]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,fs,now),now);
+    const when={minute:'через минуту',hour:'в течение часа',day:'завтра'}[e&&e.kind];
+    $('note').textContent=when?`Сервис погоды ограничил число запросов, поэтому показан пример, а не настоящая погода. Обновите страницу ${when}`:window.top!==window?'Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf/three.html':'Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
+    $('note').hidden=false } }
 }
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
+async function archiveDays(start,end){ // days [start,end) of the archive; the same addresses as on the main page
+  if(sample){await new Promise(r=>setTimeout(r,300)); const [t,fs]=fakeHours(start,end); return daysFrom(t,fs,nowMs)}
+  const j=await cachedJ(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto`,archKeep(start,end));
+  return daysFrom(j.hourly.time.map(P),hourly(j),nowMs).filter(d=>d.k>=start&&d.k<end);
+}
+function prepend(list){ // days in front of the oldest; everything counted in days moves along
+  const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n; return n;
+}
+function archiveFailed(e){ // a limit or no connection: wait and ask again later, saying why; anything else: the archive ends here
+  if(!later(e)){limit=days[0].k;return}
+  err=e.kind; wait=Date.now()+(LIMIT_WAIT[e.kind]||20e3); $('note').textContent=LIMIT_SAY[e.kind][0]; $('note').hidden=false;
+}
+const archiveOk=()=>{if(err){err=null; $('note').hidden=!sample}};
 async function extendBack(){ // a year of archive when the view gets near the oldest day
-  if(loading||!days.length||days[0].k<=limit) return;
+  if(loading||!days.length||days[0].k<=limit||Date.now()<wait) return;
   loading=true; ovKey=''; draw();
   const end=days[0].k, start=Math.max(limit,Date.UTC(new Date(end-DAY).getUTCFullYear(),0,1)); // by calendar years, so they can be kept
   try{
-    let list;
-    if(sample){await new Promise(r=>setTimeout(r,300)); const [t,fs]=fakeHours(start,end); list=daysFrom(t,fs,nowMs)}
-    else{const j=await cachedJ(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto`,archKeep(start,end));
-      list=daysFrom(j.hourly.time.map(P),hourly(j),nowMs)}
-    list=list.filter(d=>d.k<end); if(!list.length) throw 0;
-    const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n;
+    const list=await archiveDays(start,end); if(!list.length) throw 0;
+    const n=prepend(list); archiveOk();
     if(!reduce()){const f=fade={i:n,e:0}, t0=performance.now(); const st=now=>{const k=Math.min(1,(now-t0)/320); f.e=1-Math.pow(1-k,3); draw(); if(k<1) requestAnimationFrame(st); else if(fade===f) fade=null}; requestAnimationFrame(st)}
-  }catch(e){ limit=days[0].k } // archive unreachable: stop asking
+  }catch(e){ archiveFailed(e) }
   loading=false; ovKey=''; draw(); applyView();
+}
+// A day older than what is loaded: the next year of archive if it is there, otherwise its own year straight away.
+// The days in between stay empty (hole) and load only if the view gets to them, so a day in 1950 costs one year of archive
+function reach(t){
+  if(loading||!days.length||t>=days[0].k) return;
+  if(t>=Date.UTC(new Date(days[0].k-DAY).getUTCFullYear(),0,1)||sample) return extendBack();
+  const a=Math.max(limit,Date.UTC(new Date(t).getUTCFullYear(),0,1)), b=days[0].k, list=[];
+  for(let k=a;k<b;k+=DAY){const m={}; MK.forEach(x=>m[x]=[null,null,null]); list.push({k,m,v:m[metric],hole:true})}
+  prepend(list); holes.push([a,b]); ovKey=''; applyView();
+}
+async function fillHole(){ // the empty year under the view first, then its neighbours as the view gets to them
+  if(loading||!holes.length||Date.now()<wait) return;
+  const c=days[Math.max(0,Math.min(days.length-1,Math.round(vc)))].k, w=Math.max(span,14)*DAY; let t=null;
+  for(const [a,b] of holes){if(b<=c-w||a>c+w) continue; const x=Math.max(a,Math.min(b-DAY,c)); if(t==null||Math.abs(x-c)<Math.abs(t-c)) t=x}
+  if(t==null) return;
+  const [ha,hb]=holes.find(([a,b])=>t>=a&&t<b), y=new Date(t).getUTCFullYear(), start=Math.max(ha,Date.UTC(y,0,1)), end=Math.min(hb,Date.UTC(y+1,0,1));
+  loading=true; ovKey=''; draw();
+  try{
+    const list=await archiveDays(start,end), k0=days[0].k;
+    list.forEach(d=>{const i=Math.round((d.k-k0)/DAY); if(days[i]&&days[i].k===d.k) days[i]=d});
+    holes=holes.flatMap(([a,b])=>b<=start||a>=end?[[a,b]]:[...(a<start?[[a,start]]:[]),...(b>end?[[end,b]]:[])]); archiveOk();
+  }catch(e){ if(later(e)) archiveFailed(e); else holes=holes.filter(([a,b])=>!(t>=a&&t<b)) } // no archive there: the days stay empty
+  loading=false; ovKey=''; ys=null; draw();
 }
 
 /* ---------- view ---------- */
@@ -309,7 +374,7 @@ function render(){
   const wheeling=performance.now()-wheelT<180, held=drag||ovDrag||glide||wheeling||pinch, want=held||spd>1.2?center:Math.round(center);
   if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(held||spd>1.2?.7:.5);
   if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; if(!drag) center=vc}
-  if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
+  fillHole(); if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
   // springy band weights
   if(wT0){const k=reduce()?1:Math.min(1,(performance.now()-wT0)/360), e=backOut(k); wNow=wFrom.map((f,i)=>f+(wTo[i]-f)*e); if(k<1) draw(); else {wNow=wTo.slice(); wT0=0}}
   const viewC=vc+pull/ppd, X=i=>W/2+(i-viewC)*ppd, top=24, cx=snapPx(W/2); // cursor line and dots on the same pixel as the day lines
@@ -365,7 +430,10 @@ function render(){
   // the two ends: more archive on its way, the start of the archive, the end of the forecast
   const hint=(x0,x1,l1,l2,c)=>{if(x1-x0<60) return; g.save();g.textAlign='center';g.textBaseline='middle';g.fillStyle=c;
     g.font='600 13px '+FONT;g.fillText(l1,(x0+x1)/2,Ht/2-8);g.font='400 11px '+FONT;g.fillText(l2,(x0+x1)/2,Ht/2+10);g.restore()};
-  if(xs>0) hint(0,xs,loading?'Загружаем':'Начало архива',loading?'ещё год архива':'раньше данных нет',loading?C.ink:C.muted);
+  const paused=!loading&&err&&Date.now()<wait; // the archive waits out a limit or a lost connection
+  if(xs>0) paused?hint(0,xs,...LIMIT_SAY[err].slice(1),C.muted):hint(0,xs,loading?'Загружаем':'Начало архива',loading?'ещё год архива':'раньше данных нет',loading?C.ink:C.muted);
+  for(const [ha,hb] of holes){const a=Math.max(0,X((ha-days[0].k)/DAY)-ppd/2), b=Math.min(W,X((hb-days[0].k)/DAY)-ppd/2);
+    if(b-a>=90) paused?hint(a,b,...LIMIT_SAY[err].slice(1),C.muted):hint(a,b,'Загружаем',`архив за ${new Date(Math.max(ha,Math.min(hb-DAY,days[Math.round(vc)]?.k??ha))).getUTCFullYear()} год`,C.ink)}
   if(xe<W) hint(xe,W,'Конец прогноза','дальше данных нет',C.muted);
   readout(Math.round(vc));
   $('today').disabled=Math.round(vc)===todayI&&!drag;
@@ -373,10 +441,10 @@ function render(){
 }
 function readout(i){
   const d=days[i]; if(!d) return; const dt=new Date(d.k), dd=Math.round((d.k-dayOf(nowMs))/DAY), ad=-dd;
-  const yrs=n=>{const m10=n%10,m100=n%100;return n===1?'год назад':n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')};
+  const yrs=n=>{const m10=n%10,m100=n%100;return n===1?'год назад':n+(m10===1&&m100!==11?' год назад':m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')};
   const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yrs(Math.max(1,Math.round(ad/365.25))));
   $('date').textContent=WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+(dt.getUTCFullYear()!==new Date(nowMs).getUTCFullYear()?' '+dt.getUTCFullYear():'');
-  const mt=M(); $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(dd>0?' · прогноз':'')+(metric!=='temp'?' · '+mt.name.toLowerCase()+', '+mt.unit.trim():'');
+  const mt=M(); $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(d.hole?' · загружаем архив':dd>0?' · прогноз':'')+(metric!=='temp'?' · '+mt.name.toLowerCase()+', '+mt.unit.trim():'');
   PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtV(v);
     const el=$('d'+j); if(v==null||pv==null){el.textContent='\u00a0';el.className='dv';return}
     const dv=v-pv, a=Math.abs(dv), same=a<(mt.same||1); // wind is shown to a tenth, so its changes are too

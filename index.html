@@ -142,7 +142,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 <div class="app">
   <header class="hgrid">
     <div class="temp hdr" id="temp">—</div>
-    <div class="when hdr" id="when">Загрузка…</div>
+    <div class="when hdr" id="when">Загружаем погоду…</div>
     <div class="tag hdr" id="tag">&nbsp;</div>
     <div class="cond hdr" id="cond">&nbsp;</div>
     <div class="delta hdr" id="delta">&nbsp;</div>
@@ -168,7 +168,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     </div>
     <div class="acts">
       <button class="ibtn" id="pinBtn" type="button" aria-pressed="false" aria-label="Поставить метку на точку под курсором"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 4H7l3-4z"/></svg></button>
-      <button class="ibtn now" id="today" type="button" aria-label="К сегодня" title="К сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+      <button class="ibtn now" id="today" type="button" aria-label="Перейти к сегодня" title="Перейти к сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
     </div>
   </div>
   <div class="foot">
@@ -244,7 +244,7 @@ function verdictOf(dv){const m=M(), a=Math.abs(dv), w=dv>0?m.more:m.less, t=m.th
   return a<t[0]?'Так же':a<t[1]?'Чуть '+w:a<t[2]?w[0].toUpperCase()+w.slice(1):a<t[3]?'Заметно '+w:a<t[4]?'Сильно '+w:'Намного '+w}
 function dLabel(ms){const d=new Date(ms);return WD[d.getUTCDay()]+', '+d.getUTCDate()+' '+MON[d.getUTCMonth()]}
 function yearsAgo(ad){const n=Math.max(1,Math.round(ad/365.25)); if(n===1) return 'год назад';
-  const m10=n%10,m100=n%100; return n+(m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')}
+  const m10=n%10,m100=n%100; return n+(m10===1&&m100!==11?' год назад':m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')}
 const MONF=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
 function hm(ms){const d=new Date(ms);return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')}
 const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
@@ -310,16 +310,43 @@ const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive
 (()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
 const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
 function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
-async function om(u){
+async function omTry(u){
   const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
   let skip=false; try{skip=sessionStorage.getItem('omDirect')==='no'}catch(e){}
   if(via&&skip) return fetch(via);
   try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
+// Open-Meteo lets each address make so many requests a minute, an hour and a day. When neither way gets through,
+// all three pages stop asking for a while and say why, instead of passing the empty archive off as its start.
+// The error's kind: minute, hour, day — which limit is used up; net — no answer at all
+const LIMIT_WAIT={minute:60e3,hour:10*60e3,day:60*60e3};
+const omErr=kind=>Object.assign(new Error(kind),{kind});
+async function om(u){
+  let lim=null; try{lim=JSON.parse(localStorage.getItem('omLimit')||'null')}catch(e){}
+  if(lim&&Date.now()<lim.until) throw omErr(lim.kind);
+  let r; try{r=await omTry(u)}catch(e){throw omErr('net')}
+  if(r.status===429){let why=''; try{why=(await r.clone().json()).reason||''}catch(e){}
+    const kind=/minut/i.test(why)?'minute':/hour/i.test(why)?'hour':'day';
+    try{localStorage.setItem('omLimit',JSON.stringify({kind,until:Date.now()+LIMIT_WAIT[kind]}))}catch(e){}
+    throw omErr(kind)}
+  if(r.status>=500) throw omErr('net');
+  return r;
+}
+// what the person reads when the archive stops: a sentence for the toast, two short lines for the chart's edge
+const LIMIT_SAY={
+  minute:['Архив на паузе: сервис погоды ограничил число запросов. Догрузим через минуту','Архив на паузе','догрузим через минуту'],
+  hour:['Архив на паузе: сервис погоды ограничил число запросов. Догрузим в течение часа','Архив на паузе','догрузим в течение часа'],
+  day:['Архив на паузе до завтра: сервис погоды ограничил число запросов на сегодня. Загруженное остаётся на графике','Архив на паузе','догрузим завтра'],
+  net:['Архив не загрузился. Проверьте интернет, и мы попробуем ещё раз','Архив не загрузился','проверьте интернет'],
+};
+// the request is still worth making later: a limit or no connection, not an archive that has nothing there
+const later=e=>!!(e&&LIMIT_SAY[e.kind]);
+// Ask the browser to keep the stored years even when the device runs short of space (a no on older browsers changes nothing)
+try{navigator.storage?.persist?.().catch(()=>{})}catch(e){}
 // Responses kept in the phone's memory (IndexedDB) and shared by the main page and «утро, день, вечер»: both ask for
 // exactly the same addresses, so switching pages or coming back takes the forecast and the archive from here.
-// Each entry keeps for `keep` ms: the forecast for minutes, whole past years of archive for a month
+// Each entry keeps for `keep` ms: the forecast for minutes, past years of archive for months (see archKeep)
 const idb=(()=>{let p=null;
   const open=()=>p??=new Promise((res,rej)=>{const r=indexedDB.open('termograf',1); r.onupgradeneeded=()=>r.result.createObjectStore('r'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
   const tx=(m,f)=>open().then(db=>new Promise((res,rej)=>{const t=db.transaction('r',m), q=f(t.objectStore('r')); t.oncomplete=()=>res(q&&q.result); t.onerror=t.onabort=()=>rej(t.error)}));
@@ -330,7 +357,10 @@ async function cachedJ(u,keep){ // the stored answer while it keeps, otherwise t
   const c=await idb.get(u); if(c&&Date.now()-c.at<keep) return c.j;
   const j=await (await om(u)).json(); if(j&&j.hourly) idb.set(u,{at:Date.now(),keep,j}); return j;
 }
-const archKeep=(start,end)=>new Date(start).getUTCMonth()===0&&new Date(start).getUTCDate()===1&&new Date(end).getUTCMonth()===0&&new Date(end).getUTCDate()===1?30*DAY:2*DAY; // a whole calendar year does not change
+// A whole calendar year is kept for a year: the archive is final a few months after the fact, so only last year's
+// is kept for a month in case it is still settling. A part of a year (the one before the forecast) is kept for two days
+const archKeep=(start,end)=>{const a=new Date(start), b=new Date(end), whole=a.getUTCMonth()===0&&a.getUTCDate()===1&&b.getUTCMonth()===0&&b.getUTCDate()===1;
+  return !whole?2*DAY:b.getUTCFullYear()<new Date().getUTCFullYear()?365*DAY:30*DAY};
 // Opening is staged so it feels instant:
 // 1) the last quick answer for this place from the phone's memory (if under three hours old) is drawn right away;
 // 2) a small request — yesterday, today, tomorrow and the day after, hourly and every 15 minutes — replaces it in a moment;
@@ -340,7 +370,7 @@ async function getJ(u){const j=await (await om(u)).json(); if(!j.hourly) throw n
 function setData(where,j,partial){
   const keep=D&&!D.sample&&D.where&&D.where.lat===where.lat&&D.where.lon===where.lon&&vc!=null?vc:null;
   D=parse(j,where.lat); useCols(D); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
-  LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=ARCHIVE_START;
+  LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=ARCHIVE_START; D.holes=[]; D.err=null; D.wait=0;
   D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); D.q=null;
   useMin(j);
   if(keep!=null){center=keep;clamp();draw()} else {yMin=null; goToday()}
@@ -353,10 +383,10 @@ function mergeFull(j){ // the long range arrives: same hours, more of them; the 
   rebuildDays(); clamp(); if(from>=D.t[0]&&k<=0) fadeOld(from); draw(); applyView();
 }
 async function load(where, announce){
-  const first=!D; if(first) $('when').textContent='Загрузка…';
+  const first=!D; if(first) $('when').textContent='Загружаем погоду…';
   $('city').value=where.name;
   const key='wx2:'+where.lat+','+where.lon, FULL=`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
-  let shown=false, ok=true, fresh=false, whole=false;
+  let shown=false, ok=true, fresh=false, whole=false, err=null;
   // The long range from the phone's memory (under three hours old) is drawn first, complete, with the day another page was showing;
   // what comes from the network afterwards only refreshes the numbers in place. Under a quarter of an hour old, nothing is asked again
   const full=await idb.get(FULL), age=c=>c?Date.now()-c.at:1e15; let c=null; try{c=JSON.parse(store.get(key)||'null')}catch(e){}
@@ -367,19 +397,21 @@ async function load(where, announce){
   if(!fresh) try{
     const j=await getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&minutely_15=${VARS}&daily=sunrise,sunset&past_days=1&forecast_days=3&past_minutely_15=192&forecast_minutely_15=192&wind_speed_unit=ms&timezone=auto`);
     store.set(key,JSON.stringify({at:Date.now(),j})); if(whole&&D.where===where) useMin(j); else setData(where,j,true); shown=true;
-  }catch(e){ if(!shown) ok=false }
+  }catch(e){ err=e; if(!shown) ok=false }
+  const lim=err&&LIMIT_WAIT[err.kind]?err.kind:null, when={minute:'через минуту',hour:'в течение часа',day:'завтра'}[lim];
+  if(lim&&shown) toast(`Погода не обновилась: сервис погоды ограничил число запросов. Показываем загруженную раньше, обновите страницу ${when}`);
   if(ok){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
     const W0=where;
     if(!fresh&&!(whole&&age(full)<15*60e3)) cachedJ(FULL,15*60e3)
       .then(j=>{if(!j.hourly) throw new Error('api'); return j}).then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw();applyView()}});
   } else {
-    if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
+    if(D&&!D.sample){$('chartbox').classList.remove('loading');toast(lim?`Погода не загрузилась: сервис погоды ограничил число запросов. Попробуйте ${when}`:'Погода не загрузилась. Проверьте интернет и попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); useCols(D); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
-    rebuildDays(); D.q=null; D.limit=ARCHIVE_START; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
+    rebuildDays(); D.q=null; D.limit=ARCHIVE_START; D.holes=[]; D.err=null; D.wait=0; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
     yMin=null; goToday(); loadQ(where);
-    if(window.top===window) $('note').textContent='Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
+    if(window.top===window) $('note').textContent=lim?`Сервис погоды ограничил число запросов, поэтому показан пример, а не настоящая погода. Обновите страницу ${when}`:'Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
     $('note').hidden=false;
   }
   if(first||announce){pin=null; const sp=+store.get('pin'); pinWant=sp&&sp>=D.limit&&sp<D.fut?sp:null; applyPin()}
@@ -427,20 +459,33 @@ async function hereByIp(){ // no permission prompt: approximate city from the ne
 let toastT=0;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?5200:2600)}
 let viewWant=VIEW_IN&&!VIEW_IN.now?VIEW_IN.t:null; // the moment another page was showing, until the hours around it are here
-function applyView(){if(viewWant==null||!D) return; if(viewWant>=D.t[0]||D.t[0]<=D.limit){center=viewWant;viewWant=null;clamp();yMin=null;vc=null;draw()} else extendBack()} // the day from another page: the scale is set at once, not slid in
-function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) extendBack()}
+function applyView(){if(viewWant==null||!D) return; if(viewWant>=D.t[0]||D.t[0]<=D.limit){center=viewWant;viewWant=null;clamp();yMin=null;vc=null;draw()} else reach(viewWant)} // the day from another page: the scale is set at once, not slid in
+function applyPin(){if(pinWant!=null&&pinWant>=D.t[0]){pin=pinWant;pinWant=null} else if(pinWant!=null) reach(pinWant)}
+// A moment older than what is loaded: the next year of archive if it is there, otherwise its own year straight away.
+// The years in between are left empty (NaN, see holes) and load only if the view gets to them,
+// so a day in 1950 from «По годам» costs one year of archive instead of every year since
+function reach(t){
+  if(!D||D.partial||busy||t>=D.t[0]) return;
+  const next=Date.UTC(new Date(D.t[0]-DAY).getUTCFullYear(),0,1);
+  if(t>=next||D.sample) return extendBack();
+  const a=Math.max(D.limit,Date.UTC(new Date(t).getUTCFullYear(),0,1)), b=D.t[0], n=Math.round((b-a)/H), none=new Float64Array(n).fill(NaN), tt=new Float64Array(n);
+  for(let i=0;i<n;i++) tt[i]=a+i*H;
+  const o={t:tt,rain:none,code:none,s:{}}; SK.forEach(k=>o.s[k]=none);
+  prependHours(o,n); useCols(D); D.holes.push([a,b]); rebuildDays();
+  applyView(); applyPin(); draw();
+}
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 function rebuildDays(){ // one record per day, so wide views and the overview never walk every hour while scrolling
   const d0=dayOf(D.t[0]), n=Math.round((dayOf(D.t[D.t.length-1])-d0)/DAY)+1, days=new Array(n);
   let gl=1e9,gh=-1e9;
-  for(let i=0;i<D.t.length;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i];let d=days[j];
+  for(let i=0;i<D.t.length;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i];if(v!==v)continue;let d=days[j]; // NaN: a year not loaded yet
     if(!d)d=days[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
     if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
   D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey='';
 }
 function prependDays(cut){ // the days of the hours just put in front; the days already there are kept as they are
   const d0=dayOf(D.t[0]), n=Math.round((D.d0-d0)/DAY), add=new Array(Math.max(0,n)); let gl=D.gl,gh=D.gh;
-  for(let i=0;i<cut;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i]; let d=j<n?add[j]:D.days[j-n];
+  for(let i=0;i<cut;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i]; if(v!==v) continue; let d=j<n?add[j]:D.days[j-n];
     if(!d)d=add[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
     if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
   D.d0=d0; D.days=add.concat(D.days); D.gl=gl; D.gh=gh; ovKey='';
@@ -459,24 +504,47 @@ function prependHours(o,cut){
   put(D,'t',o.t); put(D,'rain',o.rain); put(D,'code',o.code); SK.forEach(k=>put(D.s,k,o.s[k]));
 }
 const dayRange=(a,b)=>{const i=Math.max(0,Math.floor((a-D.d0)/DAY)), j=Math.min(D.days.length-1,Math.floor((b-D.d0)/DAY)); const out=[]; for(let k=i;k<=j;k++) if(D.days[k]) out.push(D.days[k]); return out};
+async function archiveRange(start,end){ // hours [start,end) of the archive; the same addresses on «утро, день, вечер»
+  if(D.sample){await new Promise(r=>setTimeout(r,250)); return fakeRange(start,end)}
+  const u=`https://archive-api.open-meteo.com/v1/archive?latitude=${LOC.lat}&longitude=${LOC.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto`;
+  return parse(await cachedJ(u,archKeep(start,end)),LOC.lat);
+}
+function archiveFailed(e){ // a limit or no connection: wait and ask again later, saying why; anything else: the archive ends here
+  if(!later(e)){D.limit=D.t[0];return}
+  if(D.err!==e.kind) toast(LIMIT_SAY[e.kind][0]);
+  D.err=e.kind; D.wait=Date.now()+(LIMIT_WAIT[e.kind]||20e3);
+}
 async function extendBack(){
-  if(busy||!D||D.partial||D.t[0]<=D.limit) return; // while the long range is on its way, the archive waits for it
+  if(busy||!D||D.partial||D.t[0]<=D.limit||Date.now()<D.wait) return; // while the long range is on its way, the archive waits for it
   busy=true; render();
   const end=D.t[0], start=Math.max(D.limit,Date.UTC(new Date(end-DAY).getUTCFullYear(),0,1)); // by calendar years, so they can be kept
   try{
-    let o;
-    if(D.sample){await new Promise(r=>setTimeout(r,250)); o=fakeRange(start,end)}
-    else{
-      const u=`https://archive-api.open-meteo.com/v1/archive?latitude=${LOC.lat}&longitude=${LOC.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto`;
-      o=parse(await cachedJ(u,archKeep(start,end)),LOC.lat);
-    }
+    const o=await archiveRange(start,end);
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');
     prependHours(o,cut);
     const seam=D.t[cut]-D.t[cut-1]!==H; if(seam){const m=regular(D);['t','rain','code','s'].forEach(k=>D[k]=m[k])} // seam between archive and forecast
-    useCols(D);
+    useCols(D); D.err=null;
     Object.assign(D.sun,o.sun); if(seam) rebuildDays(); else prependDays(cut); fadeOld(end);
-  }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
+  }catch(e){ archiveFailed(e) }
+  busy=false; applyPin(); applyView(); draw();
+}
+// The empty years left by a far jump (reach): the one under the view loads first, then its neighbours as the view gets to them
+const inHole=t=>D.holes.some(([a,b])=>t>=a&&t<b);
+async function fillHole(){
+  if(busy||!D||!D.holes.length||Date.now()<D.wait) return;
+  const w=Math.max(spanV*H,14*DAY); let t=null;
+  for(const [a,b] of D.holes){if(b<=center-w||a>center+w) continue; const x=Math.max(a,Math.min(b-H,center)); if(t==null||Math.abs(x-center)<Math.abs(t-center)) t=x}
+  if(t==null) return;
+  const [ha,hb]=D.holes.find(([a,b])=>t>=a&&t<b), y=new Date(t).getUTCFullYear(), start=Math.max(ha,Date.UTC(y,0,1)), end=Math.min(hb,Date.UTC(y+1,0,1));
+  busy=true; render();
+  try{
+    const o=await archiveRange(start,end);
+    for(let i=0;i<o.t.length;i++){const x=o.t[i]; if(x<start||x>=end) continue; const k=Math.round((x-D.t[0])/H);
+      D.rain[k]=o.rain[i]??NaN; D.code[k]=o.code[i]??NaN; SK.forEach(c=>{const v=o.s[c][i]; D.s[c][k]=v==null?NaN:v})}
+    D.holes=D.holes.flatMap(([a,b])=>b<=start||a>=end?[[a,b]]:[...(a<start?[[a,start]]:[]),...(b>end?[[end,b]]:[])]);
+    useCols(D); D.err=null; Object.assign(D.sun,o.sun); rebuildDays();
+  }catch(e){ if(later(e)) archiveFailed(e); else D.holes=D.holes.filter(([a,b])=>!(t>=a&&t<b)) } // no archive there: the gap stays empty
   busy=false; applyPin(); applyView(); draw();
 }
 
@@ -528,7 +596,7 @@ function fadeOld(from){ // older data that just arrived fades in instead of popp
   requestAnimationFrame(step);
 }
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
-  if(center-Math.max(spanV*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
+  fillHole(); if(center-Math.max(spanV*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
 function render(){
   if(!D) return;
   const [g,W,Ht]=fit(chart);
@@ -620,15 +688,17 @@ function render(){
   // pinned reference line
   if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
   // temperature trace
-  const segs=[[],[]];
+  // the line breaks where a year is not loaded yet (no days there, NaN hours) and where a new week springs in
+  const segs=[]; let seg=null, segW=0; const add=(p,w=0)=>{if(p[1]!==p[1]){seg=null;return} if(!seg||segW!==w){segs.push(seg=[]);segW=w} seg.push(p)};
   if(yr){ // a year: daily range as a band, daily mean as the line
-    const band=days.map(d=>[X(d.k+12*H),Y(d.hi)]).concat(days.slice().reverse().map(d=>[X(d.k+12*H),Y(d.lo)]));
-    if(band.length>2){g.beginPath();g.moveTo(band[0][0],band[0][1]);band.forEach(p=>g.lineTo(p[0],p[1]));g.closePath();g.fillStyle=C['ink-soft'];g.fill();g.globalAlpha=.6;g.fill();g.globalAlpha=1}
-    days.forEach(d=>segs[0].push([X(d.k+12*H),Y(d.sum/d.n)]));
+    const runs=[]; days.forEach((d,j)=>{if(!j||d.k-days[j-1].k>DAY) runs.push([]); runs[runs.length-1].push(d)});
+    runs.forEach(run=>{const band=run.map(d=>[X(d.k+12*H),Y(d.hi)]).concat(run.slice().reverse().map(d=>[X(d.k+12*H),Y(d.lo)]));
+      if(band.length>2){g.beginPath();g.moveTo(band[0][0],band[0][1]);band.forEach(p=>g.lineTo(p[0],p[1]));g.closePath();g.fillStyle=C['ink-soft'];g.fill();g.globalAlpha=.6;g.fill();g.globalAlpha=1}
+      seg=null; run.forEach(d=>add([X(d.k+12*H),Y(d.sum/d.n)]))});
   } else {let qDone=false;
     for(let i=i0;i<=i1;i++){const t=D.t[i];
-      if(fine&&inQ(t)){ if(!qDone){qDone=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) segs[0].push([X(q.t0+k*Q),Y(q.temp[k])])} continue }
-      segs[warp&&t>=warp.from?1:0].push([X(t),Y(D.temp[i])])}}
+      if(fine&&inQ(t)){ if(!qDone){qDone=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) add([X(q.t0+k*Q),Y(q.temp[k])])} continue }
+      add([X(t),Y(D.temp[i])],warp&&t>=warp.from?1:0)}}
   const path=pts=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
   segs.forEach(pts=>{ if(pts.length<2) return;
     if(!yr){path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill()}
@@ -642,7 +712,7 @@ function render(){
   // the line is drawn through (every 15 minutes where those are shown), and the dots sit on the smoothed line itself
   const sm=[]; {let qd=!fine||!D.q; for(let i=i0;i<=i1;i++){const t=D.t[i];
     if(!qd&&inQ(t)){qd=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) sm.push([q.t0+k*Q,q.temp[k]])}
-    if(fine&&inQ(t)) continue; sm.push([t,D.temp[i]])}}
+    if(fine&&inQ(t)||D.temp[i]!==D.temp[i]) continue; sm.push([t,D.temp[i]])}}
   const ext=[], pick=(a,b)=>{let mx=null,mn=null; for(const p of sm){if(p[0]<a||p[0]>=b)continue; if(!mx||p[1]>mx[1])mx=p; if(!mn||p[1]<mn[1])mn=p}
     if(mx){if(X(mx[0])>=0&&X(mx[0])<=W)ext.push([mx,1]); if(X(mn[0])>=0&&X(mn[0])<=W)ext.push([mn,-1])}};
   if(dayW>=40){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
@@ -660,12 +730,19 @@ function render(){
     if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
       g.beginPath();g.moveTo(px,py-12);g.lineTo(px+5,py-5);g.lineTo(px,py+2);g.lineTo(px-5,py-5);g.closePath();g.fillStyle=C.pin;g.fill()}}
   if(fade){const xr=Math.min(W,X(fade.from)); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
+  const paused=!busy&&D.err&&Date.now()<D.wait; // the archive waits out a limit or a lost connection
+  // years not loaded yet in view: what is happening to them
+  for(const [ha,hb] of D.holes){const a=Math.max(0,X(ha)), b=Math.min(W,X(hb)); if(b-a<90) continue;
+    const y=new Date(Math.max(ha,Math.min(hb-H,vc))).getUTCFullYear(), l=paused?LIMIT_SAY[D.err].slice(1):['Загружаем',`архив за ${y} год`];
+    const mx=(a+b)/2, my=(top+bot)/2; g.save();g.textAlign='center';g.textBaseline='middle';g.font='400 11px '+MONO; const tw=Math.max(g.measureText(l[1]).width,l[0].length*8)+16;
+    g.fillStyle=C.paper;g.globalAlpha=.9;g.fillRect(mx-tw/2,my-13,tw,40);g.globalAlpha=1;g.fillStyle=paused?C.muted:C.ink;
+    g.font='600 13px '+MONO;g.fillText(l[0],mx,my);g.font='400 11px '+MONO;g.fillText(l[1],mx,my+16);g.restore()}
   // left end: more history is loading, or the ten years are all there is
   const xs=X(D.t[0]);
-  if(pull<-2&&xs>0){const more=D.partial||D.t[0]>D.limit; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
+  if(pull<-2&&xs>0){const more=(D.partial||D.t[0]>D.limit)&&!paused; g.save();g.globalAlpha=Math.min(1,-pull/(W*0.15));g.textAlign='center';g.textBaseline='middle';
     const cx2=xs/2, cy2=(top+bot)/2; g.fillStyle=more?C.ink:C.muted; g.strokeStyle=g.fillStyle; g.lineWidth=2; g.lineCap='round';
     g.beginPath();g.moveTo(cx2+6,cy2-30);g.lineTo(cx2-6,cy2-22);g.lineTo(cx2+6,cy2-14);g.stroke();
-    g.font='600 13px '+MONO; const l=D.partial?['Загружаем','прошлые дни']:more?['Загружаем','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
+    g.font='600 13px '+MONO; const l=D.partial?['Загружаем','прошлые дни']:paused?LIMIT_SAY[D.err].slice(1):more?['Загружаем','ещё год архива']:['Начало архива','раньше данных нет']; g.fillText(l[0],cx2,cy2+2);
     g.font='400 11px '+MONO; g.fillText(l[1],cx2,cy2+18); g.restore()}
   // pull-for-more hint past the revealed end
   if(pull>2&&xf<W){const more=D.partial||D.fut<D.t[D.t.length-1]+H, ready=pull>=W*0.15&&!D.partial;
@@ -682,7 +759,7 @@ function render(){
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
   const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, on the same pixel grid as the hour ticks
-  g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke();
+  if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
   readout(ci,yr,tq); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
@@ -718,6 +795,10 @@ function trio(i,isNow,tq,yr){
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
+  if(!rec||D.temp[i]!==D.temp[i]){ // a year not loaded yet
+    const paused=!busy&&D.err&&Date.now()<D.wait;
+    $('temp').textContent='—'; $('when').textContent=dLabel(ms)+withYear(ms); $('tag').textContent=rel[0].toUpperCase()+rel.slice(1);
+    $('cond').textContent=paused?LIMIT_SAY[D.err][1]:'Загружаем архив'; $('delta').textContent=''; $('verdict').textContent=''; $('verdict').className='verdict'; return}
   const val=yr?rec.sum/rec.n:tq!=null?D.q.temp[qIdx(tq)]:D.temp[i];
   bigNum($('temp'),val);
   $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
@@ -935,9 +1016,9 @@ $('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.a
     const framed=window.top!==window, ios=/iP(hone|ad|od)/.test(navigator.userAgent);
     const why=framed?'Внутри Claude геопозиция не работает. Откройте tastex.github.io/termograf'
       :err&&err.code===1?(ios?'Геопозиция выключена для сайтов: Настройки → Конфиденциальность → Службы геолокации → Сайты Safari':'Браузер не разрешил определить место. Разрешите доступ к геопозиции в настройках сайта')
-      :err&&err.code===3?'Место не определилось за 10 секунд':'Точное место определить не удалось';
+      :err&&err.code===3?'Не получилось определить место за 10 секунд':'Не получилось определить точное место';
     let w=null; try{w=await hereByIp()}catch(e){}
-    if(w){setPin(null);await load(w,why+'. Пока показываем '+w.name+': город определили по интернет‑подключению')} else toast(why);
+    if(w){setPin(null);await load(w,why+'. Пока показываем '+w.name+': город определили по интернет‑подключению')} else toast(why+(framed?'':'. Попробуйте ещё раз или введите город'));
   }
   b.classList.remove('busy')});
 addEventListener('resize',draw);
