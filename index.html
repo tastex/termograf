@@ -63,6 +63,7 @@ header.now .trio{opacity:1;visibility:visible}
 .tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
+header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
   touch-action:pan-y;cursor:grab;user-select:none}
 .chartbox:active{cursor:grabbing}
@@ -156,7 +157,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     </div>
   </header>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf</div>
-  <div class="chartbox loading" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
+  <div class="chartbox" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><span></span></button></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Масштаб">
@@ -341,9 +342,10 @@ function setData(where,j,partial){
   D=parse(j,where.lat); useCols(D); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
   LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=ARCHIVE_START;
   D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); D.q=null;
-  const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); const qs={}; SK.forEach(k=>qs[k]=series(m,k,m.time.length)); setQ(P(m.time[0]),qs,m.precipitation||[],m.weather_code||[])}
+  useMin(j);
   if(keep!=null){center=keep;clamp();draw()} else {yMin=null; goToday()}
 }
+function useMin(j){const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); const qs={}; SK.forEach(k=>qs[k]=series(m,k,m.time.length)); setQ(P(m.time[0]),qs,m.precipitation||[],m.weather_code||[])}}
 function mergeFull(j){ // the long range arrives: same hours, more of them; the view stays where it is
   const o=parse(j,D.where.lat), from=D.t[0];
   ['t','rain','code','s'].forEach(k=>D[k]=o[k]); useCols(D); Object.assign(D.sun,o.sun); D.partial=false;
@@ -352,17 +354,23 @@ function mergeFull(j){ // the long range arrives: same hours, more of them; the 
 async function load(where, announce){
   const first=!D; if(first) $('when').textContent='Загрузка…';
   $('city').value=where.name;
-  const key='wx2:'+where.lat+','+where.lon; let shown=false, ok=true;
-  try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
-  if(!shown) $('chartbox').classList.add('loading');
-  try{
+  const key='wx2:'+where.lat+','+where.lon, FULL=`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
+  let shown=false, ok=true, fresh=false;
+  // back from another page within a quarter of an hour: both answers are in the phone's memory, so the chart is drawn once,
+  // complete, with nothing arriving afterwards to shift it
+  const full=await idb.get(FULL), young=c=>c&&Date.now()-c.at<15*60e3;
+  try{const c=JSON.parse(store.get(key)||'null');
+    if(young(c)&&young(full)&&full.j&&full.j.hourly){setData(where,full.j,false); useMin(c.j); shown=fresh=true}
+    else if(c&&Date.now()-c.at<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
+  $('chartbox').classList.toggle('loading',!shown);
+  if(!fresh) try{
     const j=await getJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&minutely_15=${VARS}&daily=sunrise,sunset&past_days=1&forecast_days=3&past_minutely_15=192&forecast_minutely_15=192&wind_speed_unit=ms&timezone=auto`);
     store.set(key,JSON.stringify({at:Date.now(),j})); setData(where,j,true); shown=true;
   }catch(e){ if(!shown) ok=false }
   if(ok){
     $('note').hidden=true; store.set('place',JSON.stringify(where)); setUrl(where);
     const W0=where;
-    cachedJ(`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`,15*60e3)
+    if(!fresh) cachedJ(FULL,15*60e3)
       .then(j=>{if(!j.hourly) throw new Error('api'); return j}).then(j=>{if(D&&D.where===W0) mergeFull(j)}).catch(()=>{if(D&&D.where===W0){D.partial=false;draw();applyView()}});
   } else {
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
@@ -626,13 +634,17 @@ function render(){
   // y labels
   g.textBaseline='middle';g.font='500 11px '+MONO;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
-  // extremes: per day when there is room, otherwise for the whole visible window
-  const ext=[];
-  if(dayW>=40){for(let d=d0;d<=t1;d+=DAY){let mx=-1,mn=-1;for(let i=i0;i<=i1;i++){if(D.t[i]<d||D.t[i]>=d+DAY)continue;if(mx<0||D.temp[i]>D.temp[mx])mx=i;if(mn<0||D.temp[i]<D.temp[mn])mn=i}
-      if(mx>=0){const xa=X(D.t[mx]),xb=X(D.t[mn]);if(xa>=0&&xa<=W)ext.push([mx,1]);if(xb>=0&&xb<=W)ext.push([mn,-1])}}}
-  else{let mx=-1,mn=-1;for(let i=i0;i<=i1;i++){const x=X(D.t[i]);if(x<0||x>W)continue;if(mx<0||D.temp[i]>D.temp[mx])mx=i;if(mn<0||D.temp[i]<D.temp[mn])mn=i}if(mx>=0){ext.push([mx,1],[mn,-1])}}
+  // extremes: per day when there is room, otherwise for the whole visible window. They are looked for in the readings
+  // the line is drawn through (every 15 minutes where those are shown), and the dots sit on the smoothed line itself
+  const sm=[]; {let qd=!fine||!D.q; for(let i=i0;i<=i1;i++){const t=D.t[i];
+    if(!qd&&inQ(t)){qd=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) sm.push([q.t0+k*Q,q.temp[k]])}
+    if(fine&&inQ(t)) continue; sm.push([t,D.temp[i]])}}
+  const ext=[], pick=(a,b)=>{let mx=null,mn=null; for(const p of sm){if(p[0]<a||p[0]>=b)continue; if(!mx||p[1]>mx[1])mx=p; if(!mn||p[1]<mn[1])mn=p}
+    if(mx){if(X(mx[0])>=0&&X(mx[0])<=W)ext.push([mx,1]); if(X(mn[0])>=0&&X(mn[0])<=W)ext.push([mn,-1])}};
+  if(dayW>=40){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
   g.font='600 11px '+MONO;g.textBaseline='middle';
-  ext.forEach(([i,s])=>{const x=X(D.t[i]),y=Y(D.temp[i]),c=s>0?C.hot:C.cold,txt=fmtS(D.temp[i]),w=g.measureText(txt).width;
+  const onLine=t=>yr?null:fine&&inQ(t)?curveAt(t,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
+  ext.forEach(([[t,v],s])=>{const x=X(t),y=Y(onLine(t)??v),c=s>0?C.hot:C.cold,txt=fmtS(v),w=g.measureText(txt).width;
     g.beginPath();g.arc(x,y,3,0,7);g.fillStyle=c;g.fill();
     const tx=Math.min(W-w-3,Math.max(3,x-w/2)), ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
     tagText(g,txt,tx,ty,c,C.paper)});
@@ -672,7 +684,7 @@ function render(){
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
   const atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
   if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
-  document.querySelector('header').classList.toggle('now',atNow);
+  const hd=document.querySelector('header'); hd.classList.toggle('now',atNow); if(!hd.classList.contains('ready')) setTimeout(()=>hd.classList.add('ready'),400);
   $('today').disabled=Math.abs(center-nowAt)<(yrv?DAY:fine?Q:H)/2; // only when the cursor already stands on the current reading
 }
 
@@ -729,7 +741,7 @@ let ovKey='', ovBg=null;
 // the button in its corner switches between a year, ten years and everything
 const OVL=[{s:365*DAY,l:'год'},{s:3652*DAY,l:'10 лет'},{s:Infinity,l:'всё'}];
 let ovPick=null, ovA=null, ovDrag=false, ovPt=null, ovRaf=0, ovT=0;
-const ovLevel=()=>ovPick??(spanH>=8760?1:0), ovFull=()=>D.fut-D.t[0];
+const ovLevel=()=>ovPick??(spanH>=4380?1:0), ovFull=()=>D.fut-D.t[0];
 function ovWin(){ // the part of time the strip shows, [a,b]
   const lo=D.t[0], hi=D.fut, S=Math.min(hi-lo,OVL[ovLevel()].s);
   if(S>=hi-lo){ovA=lo;return [lo,hi]}
@@ -779,8 +791,24 @@ function drawOv(C){
 
 /* ---------- interaction ---------- */
 let drag=null;
-box.addEventListener('pointerdown',e=>{if(!D)return;cancelAnimationFrame(raf);viewWant=null;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
-window.addEventListener('pointermove',e=>{if(!drag)return;
+// two fingers (or a trackpad pinch, which comes as the wheel with ctrl) zoom between twelve hours and a year;
+// the moment between the fingers stays under them
+const ptrs=new Map(); let pinch=null;
+const SPAN_MIN=12, SPAN_MAX=8760;
+function zoomAt(h,x,t){ // h: hours on screen; x: px from the chart's left edge that shows the moment t
+  const W=box.clientWidth; h=Math.min(SPAN_MAX,Math.max(SPAN_MIN,h)); fzOn=false;fz=0;slowMs=0;
+  spanH=spanV=h; center=t-(x-W/2)/(W/h)*H; clamp(); vc=center; lastC=null; spd=0;
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.h/h))<.03)));
+  store.set('span',String(Math.round(h))); draw()}
+const momentAt=x=>(vc??center)+(x-box.clientWidth/2)/(box.clientWidth/spanV)*H;
+box.addEventListener('pointerdown',e=>{if(!D)return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){const [a,b]=[...ptrs.values()], r=box.getBoundingClientRect(), mx=(a.x+b.x)/2-r.left;
+    cancelAnimationFrame(raf); drag=null; pull=0; pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,h:spanV,t:momentAt(mx)}; box.setPointerCapture?.(e.pointerId); return}
+  if(ptrs.size>2) return;
+  cancelAnimationFrame(raf);viewWant=null;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
+window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pinch&&ptrs.size===2){const [a,b]=[...ptrs.values()], r=box.getBoundingClientRect(); zoomAt(pinch.h*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),(a.x+b.x)/2-r.left,pinch.t); return}
+  if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
   const dx=e.clientX-drag.last, now=performance.now();
@@ -789,13 +817,14 @@ window.addEventListener('pointermove',e=>{if(!drag)return;
   const rr=Math.max(0,(drag.v-maxC())/H*pph), rl=Math.max(0,(minC()-drag.v)/H*pph), rub=r=>W*0.3*(1-Math.exp(-r/(W*0.6))); // rubber band at both ends
   pull=rr>0?rub(rr):-rub(rl);
   vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();});
-window.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
+const unptr=e=>{ptrs.delete(e.pointerId); if(pinch&&ptrs.size<2){pinch=null; draw()}};
+window.addEventListener('pointerup',e=>{unptr(e);if(!drag)return;const d=drag;drag=null;
   if(d.lock!=='x') return;
   if(fzOn){fzOn=false;slowMs=0;draw()} // letting go after a close look returns to the chosen scale
   if(pull!==0){release();return}
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches)coast();
 });
-window.addEventListener('pointercancel',()=>{if(drag){drag=null;if(pull!==0)release()}});
+window.addEventListener('pointercancel',e=>{unptr(e);if(drag){drag=null;if(pull!==0)release()}});
 function release(){ // reveal next week if pulled far enough; the pull springs back and the new week slides in
   const W=box.clientWidth, end=D.t[D.t.length-1]+H, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(pull<0) extendBack();
@@ -809,7 +838,9 @@ function release(){ // reveal next week if pulled far enough; the pull springs b
   raf=requestAnimationFrame(step);
 }
 function coast(){const step=()=>{vel*=.94;if(Math.abs(vel)<.02)return;center-=vel*16/(box.clientWidth/spanV)*H;const c=center;clamp();draw();if(c!==center)return;raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)}
-box.addEventListener('wheel',e=>{if(!D)return;e.preventDefault();const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center+=d/(box.clientWidth/spanV)*H;clamp();draw()},{passive:false});
+box.addEventListener('wheel',e=>{if(!D)return;e.preventDefault();
+  if(e.ctrlKey){const x=e.clientX-box.getBoundingClientRect().left; zoomAt(spanV*Math.exp(e.deltaY*.01),x,momentAt(x)); return}
+  const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center+=d/(box.clientWidth/spanV)*H;clamp();draw()},{passive:false});
 box.tabIndex=0;
 box.addEventListener('keydown',e=>{if(!D)return;
   if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center+=(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?DAY:H);clamp();draw();e.preventDefault()}
@@ -832,7 +863,7 @@ function setZoom(h){
   fzOn=false;slowMs=0;
   if(vc!=null&&spanH<4000) center=vc; // start the new scale from the point under the cursor (the year view keeps the hour it was opened with)
   spanH=h;vc=null;spd=0;lastC=null;ovPick=null;ovA=null;
-  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.h/h))<.03)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>{viewWant=null;goToday()});
 // what the chart shows: temperature, feels-like, wind, pressure, humidity, clouds. Kept on this device, shared with three.html
@@ -910,7 +941,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',draw);
 new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 const zIn=VIEW_IN?nearest(VIEW_IN.d,[3,7,30,365])*24:0;
-setZoom(zIn||+(store.get('span')||72));
+setZoom(zIn||Math.min(SPAN_MAX,Math.max(SPAN_MIN,+store.get('span')||72)));
 keepView(()=>{ if(!D) return null; // the scale and the day stay as they came while untouched here, so 3 days survive a trip through a page without them
   const t=vc??center, now=viewWant==null&&Math.abs(t-(snapNow?snapNow(D.now):D.now))<H, same=VIEW_IN&&!now&&dayOf(t)===dayOf(VIEW_IN.t);
   return {t:viewWant??(same?VIEW_IN.t:t), d:spanH===zIn?VIEW_IN.d:spanH/24, now};

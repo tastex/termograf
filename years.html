@@ -69,7 +69,7 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
 .links{height:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;font:400 13px/18px var(--f-body);color:var(--muted);white-space:nowrap}
 .links a{color:inherit}
 .links .go{display:flex;gap:12px}
-.links .go a{color:var(--ink);text-decoration:none}
+.links .go a{font-weight:500;color:var(--ink);text-decoration:none}
 .links .go a:hover{text-decoration:underline}
 .links .go a.x3{color:var(--muted)}
 .x3 span:nth-child(1){color:var(--rain)}.x3 span:nth-child(2){color:var(--hot)}.x3 span:nth-child(3){color:var(--ink)}
@@ -248,7 +248,7 @@ async function loadMetric(F0){ // the archive of the mode on screen: from memory
   const k=metric, my=++loadN, mine=()=>my===loadN&&k===metric;
   const Y=new Date().getUTCFullYear(), recent=Date.UTC(NORM[0]-1,11,1);
   let A=null, F=F0??Fcur; try{A=JSON.parse(store.get(akey(k))||'null')}catch(e){}
-  Acur=A; if(A) use(A,F); else {vals=null; draw()}
+  Acur=A; if(A){if(!grow0) grow0=1; use(A,F)} else {vals=null; draw()} // what is in memory is shown as it is, without the years rising
   // a fresh copy needs nothing; an old one only its last two years; none at all — everything since the normal began.
   // Older years come when the view gets near them: the whole archive at once is a heavy request for Open-Meteo
   const need=!A||A.t0>recent?recent:Date.now()-A.at>20*H?Date.UTC(Y-1,0,1):null;
