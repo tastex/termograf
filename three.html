@@ -60,7 +60,7 @@ canvas{display:block;width:100%;height:100%}
 .ovbox{height:54px;position:relative;touch-action:none;cursor:pointer}
 /* how much the strip shows: a year, ten years or everything loaded */
 .ovz{position:absolute;top:2px;right:2px;height:22px;display:flex;align-items:center;gap:4px;font:500 11px/1 var(--f-body);color:var(--ink);
-  background:var(--paper);border:1px solid var(--ink-soft);border-radius:999px;padding:0 8px 0 6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  background:var(--paper);border:1px solid var(--ink-soft);border-radius:999px;padding:0 9px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .ovz::before{content:"";position:absolute;inset:-10px -4px -12px -10px} /* a bigger target for the finger */
 .ovz[hidden]{display:none}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -114,7 +114,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </header>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf/three.html</div>
   <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день. Тяните влево и вправо, нажмите на график, чтобы раскрыть его"></canvas></div>
-  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg><span></span></button></div>
+  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><span></span></button></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Масштаб">
       <button data-d="14">2 недели</button><button data-d="31">Месяц</button><button data-d="92">3 месяца</button><button data-d="365">Год</button>
@@ -158,7 +158,9 @@ const METRICS={
   hum:{v:'relative_humidity_2m',name:'Влажность',hint:'относительная, %',unit:'%',g:5,min:20,lim:[0,100],step:[10,25,50]},
   cloud:{v:'cloud_cover',name:'Облачность',hint:'доля неба в облаках, %',unit:'%',g:10,min:30,lim:[0,100],step:[10,25,50]},
 };
-const MK=Object.keys(METRICS), VARS=MK.map(k=>METRICS[k].v).join(',')+'&wind_speed_unit=ms';
+const MK=Object.keys(METRICS);
+// exactly what the main page asks for (more than this page needs), so the two share the answers kept in the phone's memory
+const VARS='temperature_2m,apparent_temperature,wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl,relative_humidity_2m,cloud_cover,precipitation,weather_code';
 let metric='temp'; try{const m=localStorage.getItem('metric'); if(METRICS[m]) metric=m}catch(e){}
 const M=()=>METRICS[metric], fmtV=v=>v==null||isNaN(v)?'—':M().num?M().num(v):String(Math.round(v))+(M().unit==='%'?'%':'');
 const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
@@ -184,6 +186,20 @@ async function om(u){
   try{const r=await fetchT(u,via?5000:30000); if(!r.ok&&via) throw 0; return r}
   catch(e){ if(!via) throw e; try{sessionStorage.setItem('omDirect','no')}catch(_){} return fetch(via) }
 }
+// Responses kept in the phone's memory (IndexedDB) and shared by the main page and «утро, день, вечер»: both ask for
+// exactly the same addresses, so switching pages or coming back takes the forecast and the archive from here.
+// Each entry keeps for `keep` ms: the forecast for minutes, whole past years of archive for a month
+const idb=(()=>{let p=null;
+  const open=()=>p??=new Promise((res,rej)=>{const r=indexedDB.open('termograf',1); r.onupgradeneeded=()=>r.result.createObjectStore('r'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
+  const tx=(m,f)=>open().then(db=>new Promise((res,rej)=>{const t=db.transaction('r',m), q=f(t.objectStore('r')); t.oncomplete=()=>res(q&&q.result); t.onerror=t.onabort=()=>rej(t.error)}));
+  return {get:k=>tx('readonly',s=>s.get(k)).catch(()=>null), set:(k,v)=>tx('readwrite',s=>s.put(v,k)).catch(()=>{}),
+    prune:()=>tx('readwrite',s=>{const c=s.openCursor(); c.onsuccess=()=>{const r=c.result; if(!r) return; const v=r.value; if(!v||Date.now()-v.at>v.keep) r.delete(); r.continue()}}).catch(()=>{})}})();
+setTimeout(idb.prune,4000);
+async function cachedJ(u,keep){ // the stored answer while it keeps, otherwise the network (and store what came)
+  const c=await idb.get(u); if(c&&Date.now()-c.at<keep) return c.j;
+  const j=await (await om(u)).json(); if(j&&j.hourly) idb.set(u,{at:Date.now(),keep,j}); return j;
+}
+const archKeep=(start,end)=>new Date(start).getUTCMonth()===0&&new Date(start).getUTCDate()===1&&new Date(end).getUTCMonth()===0&&new Date(end).getUTCDate()===1?30*DAY:2*DAY; // a whole calendar year does not change
 /* ---------- data: one value per day for each part of the day ---------- */
 function daysFrom(t,s,now){ // s: hourly values for each metric; every day keeps them all (m), v is the one on screen
   const map=new Map();
@@ -220,23 +236,24 @@ const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
 async function load(){
   const w=W0=await place(); $('city').textContent=w.name;
   $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('yr').href='years.html'+new URL($('back').href).search;
-  const key='x3m:'+w.lat+','+w.lon, use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),hourly(j),now),now)};
-  let shown=false;
-  try{const c=JSON.parse(store.get(key)||'null'); if(c&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}}catch(e){}
+  const use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),hourly(j),now),now)};
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
+  try{localStorage.removeItem('x3m:'+w.lat+','+w.lon)}catch(e){} // the old copy of the same answer, before the shared memory
+  let shown=false; const c=await idb.get(u); // shown at once if under three hours old, asked again if over fifteen minutes
+  if(c&&c.j&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}
   try{
-    const j=await (await om(`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=${VARS}&past_days=92&forecast_days=16&timezone=auto`)).json();
-    if(!j.hourly) throw 0; store.set(key,JSON.stringify({at:Date.now(),j})); use(j);
+    if(!shown||Date.now()-c.at>=15*60e3){const j=await cachedJ(u,0); if(!j.hourly) throw 0; use(j)}
   }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,fs]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,fs,now),now); $('note').hidden=false } }
 }
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
 async function extendBack(){ // a year of archive when the view gets near the oldest day
   if(loading||!days.length||days[0].k<=limit) return;
   loading=true; ovKey=''; draw();
-  const end=days[0].k, start=Math.max(limit,end-366*DAY);
+  const end=days[0].k, start=Math.max(limit,Date.UTC(new Date(end-DAY).getUTCFullYear(),0,1)); // by calendar years, so they can be kept
   try{
     let list;
     if(sample){await new Promise(r=>setTimeout(r,300)); const [t,fs]=fakeHours(start,end); list=daysFrom(t,fs,nowMs)}
-    else{const j=await (await om(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&timezone=auto`)).json();
+    else{const j=await cachedJ(`https://archive-api.open-meteo.com/v1/archive?latitude=${W0.lat}&longitude=${W0.lon}&start_date=${iso(start)}&end_date=${iso(end-DAY)}&hourly=${VARS}&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto`,archKeep(start,end));
       list=daysFrom(j.hourly.time.map(P),hourly(j),nowMs)}
     list=list.filter(d=>d.k<end); if(!list.length) throw 0;
     const n=list.length; days=list.concat(days); todayI+=n; center+=n; vc+=n; if(lastC!=null) lastC+=n; if(drag) drag.v+=n;
