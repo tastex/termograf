@@ -19,17 +19,17 @@
 /* Year by year: the same month (season, year) side by side for every year of the archive, the current one on the right */
 :root{
   --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
-  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.10);
+  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.10); --rain:#2f86b8;
   --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --hot:#c2482a; --cold:#1f74b5; --warn:#8a5a00; --warn-bg:#fff3d6;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
   /* type scale: 40 numbers · 16 text · 13 labels · 11 chart */
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.12);
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.12); --rain:#5bb3e6;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.12);
+  --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554; --ink:#a891ff; --ink-soft:rgba(168,145,255,.12); --rain:#5bb3e6;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
 html,body{height:100%}
 html{box-sizing:border-box}
@@ -71,6 +71,9 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
 .links .go{display:flex;gap:12px}
 .links .go a{color:var(--ink);text-decoration:none}
 .links .go a:hover{text-decoration:underline}
+.links .go a.x3{color:var(--muted)}
+.x3 span:nth-child(1){color:var(--rain)}.x3 span:nth-child(2){color:var(--hot)}.x3 span:nth-child(3){color:var(--ink)}
+.links .go a.x3:hover{text-decoration:none}.x3:hover span{text-decoration:underline}
 .mode{position:relative;flex:none;margin-left:auto}
 .mbtn{box-sizing:border-box;height:32px;display:flex;align-items:center;gap:6px;font:500 13px var(--f-body);color:var(--ink);background:var(--paper-2);border:0;border-radius:999px;padding:0 12px;cursor:pointer;white-space:nowrap}
 .mbtn svg{transition:transform .18s ease}.mbtn[aria-expanded="true"] svg{transform:rotate(180deg)}
@@ -126,7 +129,7 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
       <ul class="modes" id="modes" role="listbox" aria-label="Что показывать" hidden></ul>
     </div>
   </div>
-  <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><div class="go"><a id="back" href="./">График</a><a id="x3" href="three.html">Утро, день, вечер</a></div></div>
+  <div class="links"><div>Данные <a href="https://open-meteo.com" target="_blank" rel="noopener">Open‑Meteo</a></div><div class="go"><a id="back" href="./">График</a><a class="x3" id="x3" href="three.html"><span>Утро</span>, <span>день</span>, <span>вечер</span></a></div></div>
 </div>
 
 <script>
@@ -140,6 +143,13 @@ const FIRST=Date.UTC(1940,0,1);  // the Open-Meteo archive (ERA5) starts here
 // the first request reaches back to the 1991–2020 normal; older years load thirty at a time as the view reaches them
 const NORM=[1991,2020];          // the climate normal the years are held against, once the archive reaches back that far
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+// the moment and the scale on screen, shared by the three pages, so switching between them keeps both (for twelve hours):
+// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today
+const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<12*3600e3&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
+const nearest=(d,opts)=>opts.reduce((a,b)=>Math.abs(Math.log(b/d))<Math.abs(Math.log(a/d))?b:a);
+function keepView(f){const save=()=>{const v=f(); if(v) store.set('view',JSON.stringify({...v,at:Date.now()}))};
+  addEventListener('pagehide',save); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') save()});
+  document.querySelectorAll('.go a').forEach(a=>a.addEventListener('click',save))}
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
@@ -151,7 +161,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), ease=k=>1-Math.pow(1-k,3);
 let base=0, vals=null, today=0, sample=false, W0=null, ver=0, older=false;
 let mode='w', am=new Date().getMonth(), selY=null;  // step: weeks of a month, months of a season, seasons of a year; am — the month in view; selY — the chosen year (null: the newest)
 let vis=0, off=0, tVis=0, tOff=0, vel=0;           // columns across the screen and how many of the newest are scrolled past on the right; t* — where they glide to
-let disp=null, dispKey='', ys=null, drawQ=0, grow0=0, hdr={};
+let disp=null, dispKey='', ys=null, drawQ=0, grow0=0, hdr={}, toSel=false; // toSel: bring the chosen year into view once the columns are there
 try{mode=store.get('yrmode')||'w'}catch(e){}
 
 // Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
@@ -336,6 +346,7 @@ function render(){
   const GUT=30, TOP=24, BOT=34, now=performance.now(), red=reduce();
   // zoom and scroll glide to their targets; a drag or a pinch sets them directly
   if(!vis){vis=tVis=Math.min(n,clamp(Math.floor((W-GUT)/32),4,20)); off=tOff=0}
+  if(toSel){const i=cs.findIndex(c=>c.y===selY), L0=n-vis-off; if(i>=0){toSel=false; if(i<L0||i+1>L0+vis) off=tOff=clamp(n-vis-(i+.5-vis/2),0,Math.max(0,n-vis))}}
   tVis=clamp(tVis,Math.min(3,n),n); tOff=clamp(tOff,0,Math.max(0,n-tVis));
   let moving=false;
   if(red||(Math.abs(tVis-vis)<.002&&Math.abs(tOff-off)<.002)){vis=tVis;off=tOff} else {vis+=(tVis-vis)*.28; off+=(tOff-off)*.28; moving=true}
@@ -480,6 +491,9 @@ function setMode(m){
   ['prev','next'].forEach((id,i)=>{const b=$(id); b.disabled=m==='s'; b.setAttribute('aria-label',STEP[m][i]||'—'); b.title=STEP[m][i]});
   ys=null; draw();
 }
+// the day another page was showing: its month (its season in the season steps) and its year; a December belongs to the next year's winter
+function applyView(){ if(!VIEW_IN||VIEW_IN.now) return false; const d=new Date(VIEW_IN.t), m=d.getUTCMonth();
+  am=mode==='m'?(seasonOf(m)*3)%12:m; selY=d.getUTCFullYear()+(mode!=='w'&&m===11?1:0); toSel=true; draw(); return true }
 function goToday(){ am=new Date(today||Date.now()).getUTCMonth(); if(mode==='m') am=(seasonOf(am)*3)%12; selY=null; tOff=0; draw() }
 function zoomTo(v,ax){ // ax: the column (fractional) that stays under its spot on screen
   if(!geom) return; const {GUT,cw,n}=geom, W=$('box').clientWidth, L=n-vis-off, x=GUT+(ax-L)*cw;
@@ -551,8 +565,15 @@ document.addEventListener('pointerdown',e=>{if(!$('modes').hidden&&!e.target.clo
 showMetric();
 addEventListener('resize',()=>{ovKey='';draw()});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKey='';draw()});
-setMode(['w','m','s'].includes(mode)?mode:'w');
-load().then(goToday);
+const zIn=VIEW_IN?{31:'w',92:'m',365:'s'}[nearest(VIEW_IN.d,[31,92,365])]:'';
+setMode(zIn||(['w','m','s'].includes(mode)?mode:'w'));
+const fromView=applyView();
+load().then(()=>{if(!fromView) goToday()});
+keepView(()=>{ if(!vals) return null; const cs=build().cs, last=cs[cs.length-1], c=selY==null?last:cs.find(c=>c.y===selY)||last; if(!c) return null;
+  const now=c===last&&today>=c.a&&today<c.b, mm=mode==='m'?3*seasonOf(am):am; // what came from another page stays as it came while it is still in view
+  const t=VIEW_IN&&!now&&dayOf(VIEW_IN.t)>=c.a&&dayOf(VIEW_IN.t)<c.b?VIEW_IN.t:Date.UTC(mode!=='w'&&mm===11?c.y-1:c.y,mm,15,12);
+  return {t, d:mode===zIn?VIEW_IN.d:{w:31,m:92,s:365}[mode], now};
+});
 })();
 </script>
 </body>
