@@ -68,6 +68,11 @@ header.now .trio{opacity:1;visibility:visible}
 .chartbox:active{cursor:grabbing}
 canvas{display:block;width:100%;height:100%}
 .ovbox{height:54px;position:relative;touch-action:none;cursor:pointer}
+/* how much the strip shows: a year, ten years or everything loaded */
+.ovz{position:absolute;top:2px;right:2px;height:22px;display:flex;align-items:center;gap:4px;font:500 11px/1 var(--f-body);color:var(--ink);
+  background:var(--paper);border:1px solid var(--ink-soft);border-radius:999px;padding:0 8px 0 6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.ovz::before{content:"";position:absolute;inset:-10px -4px -12px -10px} /* a bigger target for the finger */
+.ovz[hidden]{display:none}
 .bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .seg{box-sizing:border-box;height:36px;display:inline-flex;align-items:stretch;background:var(--paper-2);border-radius:999px;padding:3px}
 .seg button{display:flex;align-items:center;padding-block:0;line-height:1}
@@ -152,7 +157,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   </header>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf</div>
   <div class="chartbox loading" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
-  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор всего загруженного периода"></canvas></div>
+  <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg><span></span></button></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Масштаб">
       <button id="z3" data-h="72">3 дня</button>
@@ -294,7 +299,7 @@ function regular(o){
   for(let k=0;k<n;k++){r.t[k]=a+k*H; if(r.code[k]==null&&k) r.code[k]=r.code[k-1]}
   return r;
 }
-const HIST_DAYS=Math.round(10*365.25); // how far back the page may scroll: ten years (Open-Meteo archive goes back to 1940)
+const ARCHIVE_START=Date.UTC(1940,0,1); // how far back the page may scroll: the start of the Open-Meteo archive, a year at a time as the view gets there
 let LOC=null, busy=false, pinWant=null;
 // where: {name, lat, lon}
 // Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
@@ -320,7 +325,7 @@ async function getJ(u){const j=await (await om(u)).json(); if(!j.hourly) throw n
 function setData(where,j,partial){
   const keep=D&&!D.sample&&D.where&&D.where.lat===where.lat&&D.where.lon===where.lon&&vc!=null?vc:null;
   D=parse(j,where.lat); useCols(D); D.off=j.utc_offset_seconds*1000; D.now=Date.now()+D.off; D.at=Date.now(); D.where=where; D.partial=partial;
-  LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=dayOf(D.now)-HIST_DAYS*DAY;
+  LOC={lat:where.lat,lon:where.lon}; rebuildDays(); D.limit=ARCHIVE_START;
   D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H); D.q=null;
   const m=j.minutely_15; if(m&&m.time&&m.time.length){const P=x=>Date.parse(x+(x.length===16?':00Z':'Z')); const qs={}; SK.forEach(k=>qs[k]=series(m,k,m.time.length)); setQ(P(m.time[0]),qs,m.precipitation||[],m.weather_code||[])}
   if(keep!=null){center=keep;clamp();draw()} else {yMin=null; goToday()}
@@ -349,7 +354,7 @@ async function load(where, announce){
     if(D&&!D.sample){$('chartbox').classList.remove('loading');toast('Погода не загрузилась. Попробуйте ещё раз');return}
     const now=Math.floor((Date.now()+3*H)/H)*H;
     D=fakeRange(dayOf(now)-92*DAY,dayOf(now)+16*DAY); useCols(D); D.now=now; D.off=3*H; D.at=Date.now(); D.sample=true; LOC=null;
-    rebuildDays(); D.q=null; D.limit=dayOf(D.now)-HIST_DAYS*DAY; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
+    rebuildDays(); D.q=null; D.limit=ARCHIVE_START; D.fut=Math.min(dayOf(D.now)+3*DAY,D.t[D.t.length-1]+H);
     yMin=null; goToday(); loadQ(where);
     if(window.top===window) $('note').textContent='Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
     $('note').hidden=false;
@@ -410,6 +415,26 @@ function rebuildDays(){ // one record per day, so wide views and the overview ne
     if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
   D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey='';
 }
+function prependDays(cut){ // the days of the hours just put in front; the days already there are kept as they are
+  const d0=dayOf(D.t[0]), n=Math.round((D.d0-d0)/DAY), add=new Array(Math.max(0,n)); let gl=D.gl,gh=D.gh;
+  for(let i=0;i<cut;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i]; let d=j<n?add[j]:D.days[j-n];
+    if(!d)d=add[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
+    if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
+  D.d0=d0; D.days=add.concat(D.days); D.gl=gl; D.gh=gh; ovKey='';
+}
+// Older hours go in front, a year at a time, for as long as someone scrolls back (eighty years are seven hundred thousand hours).
+// Each series lives at the end of a bigger buffer with free room before it, so a year of archive copies only that year,
+// and the room doubles when it runs out: no long copies and no big arrays left behind for the garbage collector
+function prependHours(o,cut){
+  const n=D.t.length, typed=D.t instanceof Float64Array, room=typed?D.t.byteOffset/8:0, fresh=room<cut;
+  const cap=fresh?Math.max(2*(n+cut),n+cut+400*24):0, start=fresh?cap-n-cut:room-cut;
+  const put=(obj,k,src)=>{const old=obj[k]; let buf;
+    if(fresh){buf=new Float64Array(cap); if(typed) buf.set(old,start+cut); else for(let i=0;i<n;i++){const v=old[i]; buf[start+cut+i]=v==null?NaN:v}}
+    else buf=new Float64Array(old.buffer);
+    for(let i=0;i<cut;i++){const v=src[i]; buf[start+i]=v==null?NaN:v}
+    obj[k]=buf.subarray(start,start+cut+n)};
+  put(D,'t',o.t); put(D,'rain',o.rain); put(D,'code',o.code); SK.forEach(k=>put(D.s,k,o.s[k]));
+}
 const dayRange=(a,b)=>{const i=Math.max(0,Math.floor((a-D.d0)/DAY)), j=Math.min(D.days.length-1,Math.floor((b-D.d0)/DAY)); const out=[]; for(let k=i;k<=j;k++) if(D.days[k]) out.push(D.days[k]); return out};
 async function extendBack(){
   if(busy||!D||D.partial||D.t[0]<=D.limit) return; // while the long range is on its way, the archive waits for it
@@ -424,10 +449,10 @@ async function extendBack(){
     }
     const n=o.t.findIndex(x=>x>=D.t[0]); const cut=n<0?o.t.length:n;
     if(cut===0) throw new Error('empty');
-    ['t','rain','code'].forEach(k=>D[k]=o[k].slice(0,cut).concat(D[k])); SK.forEach(k=>D.s[k]=o.s[k].slice(0,cut).concat(D.s[k]));
-    if(D.t[cut]-D.t[cut-1]!==H){const m=regular(D);['t','rain','code','s'].forEach(k=>D[k]=m[k])} // seam between archive and forecast
+    prependHours(o,cut);
+    const seam=D.t[cut]-D.t[cut-1]!==H; if(seam){const m=regular(D);['t','rain','code','s'].forEach(k=>D[k]=m[k])} // seam between archive and forecast
     useCols(D);
-    Object.assign(D.sun,o.sun); rebuildDays(); fadeOld(end);
+    Object.assign(D.sun,o.sun); if(seam) rebuildDays(); else prependDays(cut); fadeOld(end);
   }catch(e){ D.limit=D.t[0]; } // archive unreachable: stop asking
   busy=false; applyPin(); applyView(); draw();
 }
@@ -685,29 +710,52 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
 function setPin(ms){pin=ms;pinWant=null;store.set('pin',ms==null?null:String(ms));draw()}
 
 let ovKey='', ovBg=null;
+// The strip shows everything loaded while that is short. Once years of archive are in, it shows a part of them
+// (a year, ten years in the year scale) that follows the chart and scrolls while the finger holds at its edge;
+// the button in its corner switches between a year, ten years and everything
+const OVL=[{s:365*DAY,l:'год'},{s:3652*DAY,l:'10 лет'},{s:Infinity,l:'всё'}];
+let ovPick=null, ovA=null, ovDrag=false, ovPt=null, ovRaf=0, ovT=0;
+const ovLevel=()=>ovPick??(spanH>=8760?1:0), ovFull=()=>D.fut-D.t[0];
+function ovWin(){ // the part of time the strip shows, [a,b]
+  const lo=D.t[0], hi=D.fut, S=Math.min(hi-lo,OVL[ovLevel()].s);
+  if(S>=hi-lo){ovA=lo;return [lo,hi]}
+  let a=ovA??center-S/2;
+  if(!ovDrag){ // keep the chart's frame inside, with a little room on its sides; small moves glide, big jumps don't
+    const v0=center-spanV*H/2, v1=center+spanV*H/2, m=Math.min(S*.06,(S-(v1-v0))/2); let t=a;
+    if(v1-v0>=S) t=center-S/2; else {if(v0<t+m) t=v0-m; if(v1>t+S-m) t=v1+m-S}
+    t=Math.max(lo,Math.min(hi-S,t));
+    if(ovA==null||Math.abs(t-a)>S*.3||Math.abs(t-a)<S*1e-4||matchMedia('(prefers-reduced-motion: reduce)').matches) a=t; else {a+=(t-a)*.35; draw()}
+  }
+  ovA=a=Math.max(lo,Math.min(hi-S,a)); return [a,a+S];
+}
 function drawOv(C){
-  const [g,W,Ht]=fit(ov), a=D.t[0], b=D.fut, X=ms=>(ms-a)/(b-a)*W, dpr=devicePixelRatio||1;
-  const key=[a,b,W,Ht,dpr,C.ink,busy].join('|');
+  const [g,W,Ht]=fit(ov), [a,b]=ovWin(), X=ms=>(ms-a)/(b-a)*W, dpr=devicePixelRatio||1;
+  const key=[a,b,D.t[0],W,Ht,dpr,C.ink,busy].join('|');
   if(key!==ovKey){ // the static part (seasons, bars, months) is drawn once and reused while scrolling
     ovKey=key; ovBg=ovBg||document.createElement('canvas'); ovBg.width=Math.round(W*dpr); ovBg.height=Math.round(Ht*dpr);
     const o=ovBg.getContext('2d'); o.setTransform(dpr,0,0,dpr,0,0); o.clearRect(0,0,W,Ht);
-    const Y=v=>4+(D.gh-v)/(D.gh-D.gl||1)*(Ht-16), long=(b-a)>700*DAY;
+    const Y=v=>4+(D.gh-v)/(D.gh-D.gl||1)*(Ht-16), long=(b-a)>700*DAY, py=W*365.25*DAY/(b-a), yStep=py>=36?1:py>=18?2:py>=7?5:10; // labelled years: every one, or every 2nd, 5th, 10th
     // seasons: winter cool, summer warm, as faint bands
     for(let y=new Date(a).getUTCFullYear()-1;y<=new Date(b).getUTCFullYear();y++){
       const w0=X(Date.UTC(y,11,1)),w1=X(Date.UTC(y+1,2,1)),s0=X(Date.UTC(y,5,1)),s1=X(Date.UTC(y,8,1));
       o.globalAlpha=.10;o.fillStyle=C.cold;o.fillRect(w0,0,w1-w0,Ht-10);o.fillStyle=C.hot;o.fillRect(s0,0,s1-s0,Ht-10);o.globalAlpha=1}
     o.fillStyle=C.ink;o.globalAlpha=.6;
-    for(const d of D.days){if(!d||d.k>=b)continue;const x=X(d.k),w=Math.max(.6,X(d.k+DAY)-x-(long?0:1));o.fillRect(x,Y(d.hi),w,Math.max(1,Y(d.lo)-Y(d.hi)))}
+    for(const d of dayRange(a-DAY,b)){if(d.k>=b)continue;const x=X(d.k),w=Math.max(.6,X(d.k+DAY)-x-(long?0:1));o.fillRect(x,Y(d.hi),w,Math.max(1,Y(d.lo)-Y(d.hi)))}
     o.globalAlpha=1;o.font='500 11px '+MONO;o.textBaseline='alphabetic'; let lastEnd=-1;
     for(let d=new Date(Date.UTC(new Date(a).getUTCFullYear(),new Date(a).getUTCMonth(),1));d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){
       const m=d.getTime(); if(m<a) continue; const x=X(m), jan=d.getUTCMonth()===0;
       o.fillStyle=C.muted;
-      if(jan||!long){o.fillRect(x,0,1,Ht);const tx=jan?String(d.getUTCFullYear()):MON[d.getUTCMonth()];if(x+3>=lastEnd){o.fillText(tx,x+3,Ht-1);lastEnd=x+3+o.measureText(tx).width+3}}
-      else o.fillRect(x,Ht-12,1,3); // small month ticks when years are shown
+      if(jan&&d.getUTCFullYear()%yStep||(!jan&&long)){if(jan||py>=60)o.fillRect(x,Ht-12,1,3)} // small ticks for months, or for the years between the labelled ones
+      else{o.fillRect(x,0,1,Ht);const tx=jan?String(d.getUTCFullYear()):MON[d.getUTCMonth()];if(x+3>=lastEnd){o.fillText(tx,x+3,Ht-1);lastEnd=x+3+o.measureText(tx).width+3}}
     }
     if(busy){o.fillStyle=C.ink;o.fillText('загрузка…',3,10)}
   }
   g.clearRect(0,0,W,Ht); g.drawImage(ovBg,0,0,W,Ht);
+  // the edges fade where the strip goes on beyond them
+  const fadeE=(x,dir)=>{const gr=g.createLinearGradient(x,0,x+dir*18,0); gr.addColorStop(0,C.paper); gr.addColorStop(1,C.paper+'00'); g.fillStyle=gr; g.fillRect(Math.min(x,x+dir*18),0,18,Ht)};
+  if(a>D.t[0]+H) fadeE(0,1); if(b<D.fut-H) fadeE(W,-1);
+  const z=$('ovz'), full=ovFull(), lab=full>OVL[0].s?(b-a>=full?'всё':OVL[ovLevel()].l):'';
+  if(z.dataset.l!==lab){z.dataset.l=lab; z.hidden=!lab; z.lastChild.textContent=lab; z.setAttribute('aria-label','Полоса внизу: '+(lab==='всё'?'показано всё загруженное':lab==='год'?'показан год':'показаны '+lab)+'. Сменить')}
   const x0=Math.max(0,X(center-spanV*H/2)),x1=Math.min(W,X(center+spanV*H/2));
   g.fillStyle=C.fg;g.globalAlpha=.08;g.fillRect(x0,0,x1-x0,Ht);g.globalAlpha=1;
   g.strokeStyle=C.fg;g.lineWidth=1.5;g.strokeRect(x0+.75,.75,Math.max(2,x1-x0-1.5),Ht-1.5);
@@ -752,16 +800,24 @@ box.tabIndex=0;
 box.addEventListener('keydown',e=>{if(!D)return;
   if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center+=(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?DAY:H);clamp();draw();e.preventDefault()}
   if(e.key==='Enter'||e.key===' '){setPin(pin!=null&&idxAt(pin)===idxAt(center)?null:D.t[idxAt(center)]);e.preventDefault()}});
-const ovSet=e=>{const r=ovbox.getBoundingClientRect();const f=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));center=D.t[0]+f*(D.fut-D.t[0]);clamp();draw()};
-let ovDrag=false;
-ovbox.addEventListener('pointerdown',e=>{if(!D)return;ovDrag=true;ovbox.setPointerCapture?.(e.pointerId);ovSet(e)});
-ovbox.addEventListener('pointermove',e=>{if(ovDrag)ovSet(e)});
-ovbox.addEventListener('pointerup',()=>ovDrag=false);
+// the finger on the strip moves the cursor to that point; held at an edge, the strip scrolls on (faster nearer the edge)
+function ovStep(now){ovRaf=0; if(!ovDrag||!D) return;
+  const r=ovbox.getBoundingClientRect(), x=ovPt-r.left, e=Math.min(40,r.width*.12), dt=ovT?Math.min(50,now-ovT):16; ovT=now;
+  const push=x<e?-Math.min(1,1-x/e):x>r.width-e?Math.min(1,(x-r.width+e)/e):0;
+  let [a,b]=ovWin(); if(push&&b-a<ovFull()){ovA+=push*(b-a)*.6*dt/1000; [a,b]=ovWin()}
+  center=a+Math.min(1,Math.max(0,x/r.width))*(b-a); clamp(); draw();
+  if(push) ovRaf=requestAnimationFrame(ovStep)}
+ovbox.addEventListener('pointerdown',e=>{if(!D||e.target.closest('.ovz'))return;cancelAnimationFrame(raf);viewWant=null;ovDrag=true;ovbox.setPointerCapture?.(e.pointerId);ovPt=e.clientX;ovT=0;ovStep(performance.now())});
+ovbox.addEventListener('pointermove',e=>{if(!ovDrag)return;ovPt=e.clientX;if(!ovRaf)ovStep(performance.now())});
+const ovEnd=()=>{ovDrag=false;cancelAnimationFrame(ovRaf);ovRaf=0;if(D)draw()};
+ovbox.addEventListener('pointerup',ovEnd); ovbox.addEventListener('pointercancel',ovEnd);
+$('ovz').addEventListener('click',()=>{if(!D)return; const cur=ovLevel(); // a year → ten years → everything → a year
+  ovPick=Math.min(OVL[cur].s,ovFull())>=ovFull()?0:cur+1; ovA=null; ovKey=''; draw()});
 
 function setZoom(h){
   fzOn=false;slowMs=0;
   if(vc!=null&&spanH<4000) center=vc; // start the new scale from the point under the cursor (the year view keeps the hour it was opened with)
-  spanH=h;vc=null;spd=0;lastC=null;
+  spanH=h;vc=null;spd=0;lastC=null;ovPick=null;ovA=null;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.h===h)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>{viewWant=null;goToday()});
