@@ -138,13 +138,23 @@ const FONT='"Golos Text",system-ui,sans-serif';
 const PARTS=[{k:'m',a:6,b:10},{k:'d',a:12,b:16},{k:'e',a:18,b:22}];
 const ARCHIVE_START=Date.UTC(1940,0,1); // the whole Open-Meteo archive, loaded a year at a time as the view gets there
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
-// the moment and the scale on screen, shared by the three pages, so switching between them keeps both (for twelve hours):
-// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today
-const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<12*3600e3&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
+// the moment and the scale on screen, shared by the three pages, so switching between them keeps both:
+// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today.
+// Kept for seven minutes: the app closed and opened again within them shows what it showed, later it opens on today
+const IDLE=7*60e3; // seven minutes away: enough to forget what was on screen, so today and fresh data
+const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<IDLE&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
 const nearest=(d,opts)=>opts.reduce((a,b)=>Math.abs(Math.log(b/d))<Math.abs(Math.log(a/d))?b:a);
 function keepView(f){const save=()=>{const v=f(); if(v) store.set('view',JSON.stringify({...v,at:Date.now()}))};
   addEventListener('pagehide',save); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') save()});
   document.querySelectorAll('.go a').forEach(a=>a.addEventListener('click',save))}
+// back after seven minutes away (screen off, another app): back(), as if the app were opened anew;
+// left on screen untouched: idle() every seven minutes, for an hour
+function onWake(back,idle){ let away=0, touched=Date.now(), last=Date.now();
+  const ret=()=>{if(away&&Date.now()-away>=IDLE){touched=last=Date.now(); back()} away=0};
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') away=away||Date.now(); else ret()});
+  addEventListener('pageshow',e=>{if(e.persisted) ret()});
+  ['pointerdown','keydown','wheel'].forEach(k=>addEventListener(k,()=>touched=Date.now(),{capture:true,passive:true}));
+  if(idle) setInterval(()=>{const t=Date.now(); if(document.visibilityState==='visible'&&t-touched>=IDLE&&t-touched<3600e3&&t-last>=IDLE){last=t; idle()}},60000)}
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtT=v=>{if(v==null||isNaN(v))return '—';const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'};
 const dayOf=ms=>Math.floor(ms/DAY)*DAY;
@@ -269,10 +279,10 @@ async function load(){
   const use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),hourly(j),now),now)};
   const u=`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
   try{localStorage.removeItem('x3m:'+w.lat+','+w.lon)}catch(e){} // the old copy of the same answer, before the shared memory
-  let shown=false; const c=await idb.get(u); // shown at once if under three hours old, asked again if over fifteen minutes
+  let shown=false; const c=await idb.get(u); // shown at once if under three hours old, asked again if over seven minutes
   if(c&&c.j&&Date.now()-c.at<3*3600e3){use(c.j);shown=true}
   try{
-    if(!shown||Date.now()-c.at>=15*60e3){const j=await cachedJ(u,0); if(!j.hourly) throw 0; use(j)}
+    if(!shown||Date.now()-c.at>=IDLE){const j=await cachedJ(u,0); if(!j.hourly) throw 0; use(j)}
   }catch(e){ if(!shown){ sample=true; const now=Date.now()+3*H, [t,fs]=fakeHours(dayOf(now)-92*DAY,dayOf(now)+16*DAY); setDays(daysFrom(t,fs,now),now);
     const when={minute:'через минуту',hour:'в течение часа',day:'завтра'}[e&&e.kind];
     $('note').textContent=when?`Сервис погоды ограничил число запросов, поэтому показан пример, а не настоящая погода. Обновите страницу ${when}`:window.top!==window?'Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf/three.html':'Погода не загрузилась, поэтому показан пример. Проверьте интернет и обновите страницу';
@@ -582,6 +592,10 @@ keepView(()=>{ const i=Math.round(vc), k=days[i]?.k; if(k==null) return null; //
   return {t:viewWant!=null||same?VIEW_IN.t:k+12*3600e3, d:span===zIn?VIEW_IN.d:span, now};
 });
 load();
+let loadedAt=Date.now();
+const refresh=()=>{if(!sample&&Date.now()-loadedAt>=IDLE){loadedAt=Date.now(); return load()}};
+onWake(()=>{ viewWant=null; if(days.length){center=vc=todayI; lastC=null; ys=null; draw()} refresh()?.then(goToday) }, // back after seven minutes: today and fresh data
+  ()=>{ const k=days[Math.round(vc)]?.k; if(k!=null&&k>=nowMs-80*DAY) refresh() }); // untouched on screen: fresh data, unless deep in the archive
 })();
 </script>
 </body>

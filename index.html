@@ -205,13 +205,23 @@ let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0; // spanV: hours actually 
 let warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
-// the moment and the scale on screen, shared by the three pages, so switching between them keeps both (for twelve hours):
-// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today
-const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<12*3600e3&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
+// the moment and the scale on screen, shared by the three pages, so switching between them keeps both:
+// t — the moment in view, the city's local time as UTC ms; d — the span in days; now — the view stood on today.
+// Kept for seven minutes: the app closed and opened again within them shows what it showed, later it opens on today
+const IDLE=7*60e3; // seven minutes away: enough to forget what was on screen, so today and fresh data
+const VIEW_IN=(()=>{try{const v=JSON.parse(store.get('view')||'null'); return v&&Date.now()-v.at<IDLE&&isFinite(v.t)&&v.d>0?v:null}catch(e){return null}})();
 const nearest=(d,opts)=>opts.reduce((a,b)=>Math.abs(Math.log(b/d))<Math.abs(Math.log(a/d))?b:a);
 function keepView(f){const save=()=>{const v=f(); if(v) store.set('view',JSON.stringify({...v,at:Date.now()}))};
   addEventListener('pagehide',save); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') save()});
   document.querySelectorAll('.go a').forEach(a=>a.addEventListener('click',save))}
+// back after seven minutes away (screen off, another app): back(), as if the app were opened anew;
+// left on screen untouched: idle() every seven minutes, for an hour
+function onWake(back,idle){ let away=0, touched=Date.now(), last=Date.now();
+  const ret=()=>{if(away&&Date.now()-away>=IDLE){touched=last=Date.now(); back()} away=0};
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') away=away||Date.now(); else ret()});
+  addEventListener('pageshow',e=>{if(e.persisted) ret()});
+  ['pointerdown','keydown','wheel'].forEach(k=>addEventListener(k,()=>touched=Date.now(),{capture:true,passive:true}));
+  if(idle) setInterval(()=>{const t=Date.now(); if(document.visibilityState==='visible'&&t-touched>=IDLE&&t-touched<3600e3&&t-last>=IDLE){last=t; idle()}},60000)}
 function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
 function fmtT(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'}
 function fmtD(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+'°'}
@@ -388,10 +398,11 @@ async function load(where, announce){
   const key='wx2:'+where.lat+','+where.lon, FULL=`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
   let shown=false, ok=true, fresh=false, whole=false, err=null;
   // The long range from the phone's memory (under three hours old) is drawn first, complete, with the day another page was showing;
-  // what comes from the network afterwards only refreshes the numbers in place. Under a quarter of an hour old, nothing is asked again
+  // what comes from the network afterwards only refreshes the numbers in place. The quick request is asked again after seven minutes,
+  // the long range after a quarter of an hour
   const full=await idb.get(FULL), age=c=>c?Date.now()-c.at:1e15; let c=null; try{c=JSON.parse(store.get(key)||'null')}catch(e){}
   try{
-    if(full&&full.j&&full.j.hourly&&age(full)<3*3600e3){setData(where,full.j,false); if(age(c)<3*3600e3) useMin(c.j); shown=whole=true; fresh=age(full)<15*60e3&&age(c)<15*60e3}
+    if(full&&full.j&&full.j.hourly&&age(full)<3*3600e3){setData(where,full.j,false); if(age(c)<3*3600e3) useMin(c.j); shown=whole=true; fresh=age(full)<15*60e3&&age(c)<IDLE}
     else if(age(c)<3*3600e3){setData(where,c.j,true); shown=true}}catch(e){}
   $('chartbox').classList.toggle('loading',!shown); if(shown) applyView(); // straight onto the day another page was showing
   if(!fresh) try{
@@ -1031,13 +1042,13 @@ keepView(()=>{ if(!D) return null; // the scale and the day stay as they came wh
   const t=vc??center, now=viewWant==null&&Math.abs(t-(snapNow?snapNow(D.now):D.now))<H, same=VIEW_IN&&!now&&dayOf(t)===dayOf(VIEW_IN.t);
   return {t:viewWant??(same?VIEW_IN.t:t), d:spanH===zIn?VIEW_IN.d:spanH/24, now};
 });
-// keep "now" current while the page is open, and refresh the data after a long sleep
+// keep "now" current while the page is open; back after seven minutes away: today and fresh data,
+// left untouched on screen: fresh data where the view stands (unless it is deep in the archive, which a reload would drop)
 setInterval(()=>{if(D){D.now=Date.now()+D.off;draw()}},60000);
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState!=='visible'||!D) return;
-  D.now=Date.now()+D.off;
-  if(!D.sample&&D.where&&Date.now()-D.at>30*60000) load(D.where,false); else draw();
-});
+const refresh=()=>{if(D&&!D.sample&&D.where&&Date.now()-D.at>=IDLE) load(D.where,false)};
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&D){D.now=Date.now()+D.off;draw()}});
+onWake(()=>{ if(!D) return; viewWant=null; vc=null; yMin=null; goToday(); refresh() },
+  ()=>{ if(D&&(vc??center)>=D.now-80*DAY) refresh() });
 
 /* ---------- link with the city, home-screen app ---------- */
 function setUrl(w){ // keep the place in the address so a bookmark or home-screen icon opens this city
