@@ -757,16 +757,20 @@ function render(){
     g.save();g.beginPath();g.rect(0,0,Math.max(0,xn),Ht);g.clip();path(pts);g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore();
     if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
   });
-  // the compared city: a second solid line in its own colour, its name at its right end
+  // the compared city: a second solid line in its own colour
   if(CMP){const cs=[]; let cur=null; const put=(x,v)=>{if(v==null){cur=null;return} if(!cur) cs.push(cur=[]); cur.push([x,Y(v)])};
     if(yr) for(let d=dayOf(t0)-DAY;d<=t1+DAY&&d<D.fut;d+=DAY) put(X(d+12*H),cmpDay(d));
     else for(let t=Math.floor(t0/H)*H-H;t<=t1+H&&t<D.fut;t+=H) put(X(t),cmpAt(t));
     const xc=Math.max(0,xn), cl=(a,b,al)=>{g.save();g.beginPath();g.rect(a,0,b-a,Ht);g.clip();g.globalAlpha=al;g.strokeStyle=C.cmp;g.lineJoin='round';g.lineWidth=pph>=3?2:1.5;
       cs.forEach(pts=>{if(pts.length>1){path(pts);g.stroke()}});g.restore()};
     cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
-    let lp=null; cs.forEach(pts=>pts.forEach(p=>{if(p[0]<=W-6&&(!lp||p[0]>lp[0]))lp=p}));
-    if(lp&&lp[0]>W*.4){g.font='600 11px '+MONO;g.textBaseline='middle';const nm=CMP.where.name, w=g.measureText(nm).width, by=lp[0]+w+10<=W;
-      tagText(g,nm,by?lp[0]+6:W-w-4,Math.max(top,Math.min(bot-10,by?lp[1]:lp[1]-14)),C.cmp,C.paper)}}
+    // both cities are named at the right end of their lines, the labels kept apart when the lines run close
+    const end=ss=>{let lp=null; ss.forEach(pts=>pts.forEach(p=>{if(p[0]<=W-6&&(!lp||p[0]>lp[0]))lp=p})); return lp&&lp[0]>W*.4?lp:null};
+    g.font='600 11px '+MONO;g.textBaseline='middle';
+    const tags=[[end(cs),CMP.where.name,C.cmp],[D.where?end(segs):null,D.where?.name,C.ink]].filter(t=>t[0]).map(([lp,nm,c])=>{const w=g.measureText(nm).width, by=lp[0]+w+10<=W;
+      return {x:by?lp[0]+6:W-w-4, y:by?lp[1]:lp[1]-14, nm, c}});
+    if(tags.length===2){const [a,b]=tags[0].y<=tags[1].y?tags:[tags[1],tags[0]], gap=16-(b.y-a.y); if(gap>0){a.y-=gap/2; b.y+=gap/2}}
+    tags.forEach(t=>tagText(g,t.nm,t.x,Math.max(top,Math.min(bot-10,t.y)),t.c,C.paper))}
   // y labels
   g.textBaseline='middle';g.font='500 11px '+MONO;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
