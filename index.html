@@ -20,7 +20,7 @@
 :root{
   --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
   --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13); --rain:#2f86b8;
-  --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --night:rgba(44,62,104,.06); --hot:#c2482a; --cold:#1f74b5; --pin:#b07400; --warn:#8a5a00; --warn-bg:#fff3d6;
+  --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --night:rgba(44,62,104,.06); --hot:#c2482a; --cold:#1f74b5; --pin:#b07400; --cmp:#0b8670; --warn:#8a5a00; --warn-bg:#fff3d6;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
   /* type scale: 64 hero · 22 numbers · 16 text · 13 labels · 11 chart */
@@ -28,11 +28,11 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
   --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
-  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
 :root[data-theme="dark"]{
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
   --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
-  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
+  --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
 html,body{height:100%}
 html{box-sizing:border-box} /* the safe-area padding on the root stays inside the screen height (home-screen app on iPhone) */
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
@@ -97,10 +97,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .sugg li[aria-selected="true"],.sugg li:hover{background:var(--paper-2)}
 .sugg b{font:500 16px var(--f-body);color:var(--fg)}
 .sugg span{font:400 13px var(--f-body);color:var(--muted)}
-.city input{font:500 16px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:14ch;min-width:0}
+.city input{font:500 16px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);padding:2px 0;width:11ch;flex:0 1 auto;min-width:0;text-overflow:ellipsis}
 .city input:focus{outline:none;border-bottom-color:var(--ink)}
 .locbtn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:999px;background:var(--paper-2);color:var(--ink);cursor:pointer;padding:0;flex:none}
 .locbtn.busy svg{animation:spin 1s linear infinite}
+/* the city to compare with: the button is filled while it is on the chart; picking one turns the city field into "compare with" for a moment */
+#cmpBtn{color:var(--cmp)}
+#cmpBtn[aria-pressed="true"]{background:var(--cmp);color:var(--paper)}
+.city.vs #locBtn{display:none}
+.city.vs input{border-bottom-color:var(--cmp)}
+.city.vs .lbl{color:var(--cmp);white-space:nowrap}
+.delta .cmp{color:var(--cmp);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.delta button.cmp{color:var(--cmp);border-color:var(--cmp)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .chartbox canvas,.ovbox canvas{transition:opacity .25s ease}
 .chartbox.loading canvas{opacity:.25}
@@ -173,10 +181,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   </div>
   <div class="foot">
     <form class="city" id="cityForm">
-      <span class="lbl">Город</span>
+      <span class="lbl" id="cityLbl">Город</span>
       <input id="city" value="" placeholder="Город" autocomplete="off" enterkeyhint="search" aria-label="Город" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false">
       <ul class="sugg" id="sugg" role="listbox" hidden></ul>
       <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      <button class="locbtn" id="cmpBtn" type="button" aria-pressed="false" aria-label="Сравнить с другим городом"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-4-4M20 16H6l4 4"/></svg></button>
     </form>
     <div class="mode">
       <button class="mbtn" id="modeBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="modes"><span id="modeName">Температура</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
@@ -321,7 +330,8 @@ let LOC=null, busy=false, pinWant=null;
 const MIRROR='https://termograf.tasteofthefloor.workers.dev';
 const OM_HOSTS={'api.open-meteo.com':'api','archive-api.open-meteo.com':'archive','geocoding-api.open-meteo.com':'geo'};
 (()=>{try{const m=new URLSearchParams(location.search).get('mirror'); if(m!=null){m?localStorage.setItem('mirror',m):localStorage.removeItem('mirror')}}catch(e){}})();
-const mirrorBase=()=>{let m=MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
+// a page served by the worker itself (a preview of a branch) uses that worker as its mirror
+const mirrorBase=()=>{let m=/\.workers\.dev$/.test(location.hostname)?location.origin:MIRROR; try{m=localStorage.getItem('mirror')||m}catch(e){} return (m||'').replace(/\/+$/,'')};
 function fetchT(u,ms){const c=new AbortController(), t=setTimeout(()=>c.abort(),ms); return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
 async function omTry(u){
   const m=mirrorBase(), x=new URL(u), via=m?m+'/'+OM_HOSTS[x.host]+x.pathname+x.search:null;
@@ -379,6 +389,8 @@ const archKeep=(start,end)=>{const a=new Date(start), b=new Date(end), whole=a.g
 // 2) a small request — yesterday, today, tomorrow and the day after, hourly and every 15 minutes — replaces it in a moment;
 // 3) three months back and two weeks ahead arrive in the background. Scrolling into what is not there yet shows that it is loading.
 const WX='https://api.open-meteo.com/v1/forecast', VARS=Object.values(SER).join(',')+',precipitation,weather_code';
+// three months back and sixteen days ahead; the same address for the city on screen and the city it is compared with, so either is kept once
+const fullUrl=w=>`${WX}?latitude=${w.lat}&longitude=${w.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
 async function getJ(u){const j=await (await om(u)).json(); if(!j.hourly) throw new Error('api'); return j}
 function setData(where,j,partial){
   const keep=D&&!D.sample&&D.where&&D.where.lat===where.lat&&D.where.lon===where.lon&&vc!=null?vc:null;
@@ -398,7 +410,7 @@ function mergeFull(j){ // the long range arrives: same hours, more of them; the 
 async function load(where, announce){
   const first=!D; if(first) $('when').textContent='Загружаем погоду…';
   $('city').value=where.name;
-  const key='wx2:'+where.lat+','+where.lon, FULL=`${WX}?latitude=${where.lat}&longitude=${where.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
+  const key='wx2:'+where.lat+','+where.lon, FULL=fullUrl(where);
   let shown=false, ok=true, fresh=false, whole=false, err=null;
   // The long range from the phone's memory (under three hours old) is drawn first, complete, with the day another page was showing;
   // what comes from the network afterwards only refreshes the numbers in place. The quick request is asked again after seven minutes,
@@ -435,6 +447,7 @@ async function load(where, announce){
   $('tz').textContent=D.off!==devOff?'Время — местное для города ('+tzs+') · ':'';
   $('chartbox').classList.remove('loading');
   if(announce&&ok) toast(typeof announce==='string'?announce:'Теперь показана погода: '+where.name);
+  if(cmpWant&&ok&&!D.sample) loadCmp(cmpWant);
 }
 // 15-minute readings for yesterday, today and tomorrow (native in Central Europe and North America, interpolated from hourly elsewhere)
 function hourlyAt(t,a=D.temp){const k=(t-D.t[0])/H, i=Math.max(0,Math.min(D.t.length-2,Math.floor(k))), u=Math.max(0,Math.min(1,k-i)); return a[i]+(a[i+1]-a[i])*u}
@@ -451,6 +464,29 @@ async function loadQ(where){
     setQ(t0,qs,rain,code); return;
   }
 }
+// The city to compare with: its forecast from three months back to sixteen days ahead (no archive), by its own local clock,
+// so 15:00 here is set against 15:00 there. It is drawn as a second line, and the header says how it differs from here
+let CMP=null, cmpWant=null; try{const c=JSON.parse(store.get('cmp')||'null'); if(c&&isFinite(c.lat)&&isFinite(c.lon)) cmpWant=c}catch(e){}
+async function loadCmp(w){
+  try{const j=await cachedJ(fullUrl(w),15*60e3); if(!j||!j.hourly) throw omErr('net'); if(cmpWant!==w) return;
+    const o=parse(j,w.lat); CMP={where:w,t0:o.t[0],n:o.t.length,s:o.s}; draw()}
+  catch(e){ if(cmpWant!==w||CMP) return; const lim=e&&LIMIT_WAIT[e.kind];
+    toast(lim?`Погода в городе ${w.name} не загрузилась: сервис погоды ограничил число запросов. Обновите страницу позже`:`Погода в городе ${w.name} не загрузилась. Проверьте интернет и обновите страницу`)}
+}
+function setCmp(w){ // a place, or null to stop comparing
+  if(w&&D&&D.where&&w.lat===D.where.lat&&w.lon===D.where.lon){toast('Этот город уже на графике. Выберите другой для сравнения');return}
+  cmpWant=w; CMP=null; store.set('cmp',w?JSON.stringify(w):null); showCmp();
+  if(w){setPin(null); if(D&&!D.sample) loadCmp(w); else toast('Внутри Claude сравнение не работает. Откройте tastex.github.io/termograf')} else draw();
+}
+function showCmp(){const b=$('cmpBtn'); b.setAttribute('aria-pressed',String(!!cmpWant)); b.setAttribute('aria-label',cmpWant?'Убрать сравнение с городом '+cmpWant.name:'Сравнить с другим городом')}
+// the compared city's reading at t (between hours, along the line), its daily mean in the year view; null where it has none
+function cmpAt(t){if(!CMP) return null; const a=CMP.s[metric], k=(t-CMP.t0)/H, i=Math.floor(k);
+  if(i<0||i>CMP.n-1) return null; const v0=a[i], v1=i<CMP.n-1?a[i+1]:v0; return v0==null||v1==null?null:v0+(v1-v0)*(k-i)}
+function cmpDay(d){if(!CMP) return null; const a=CMP.s[metric], i0=Math.round((dayOf(d)-CMP.t0)/H); let s=0,n=0;
+  for(let i=Math.max(0,i0);i<Math.min(CMP.n,i0+24);i++) if(a[i]!=null){s+=a[i];n++} return n>=20?s/n:null}
+const cmpVal=(t,yr)=>yr?cmpDay(t):cmpAt(t);
+// "на 4° холоднее" — how much and which way, or null when the difference is too small to notice
+function byHow(d){const m=M(); return Math.abs(d)<m.th[0]?null:`на ${m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit} ${d>0?m.more:m.less}`}
 const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
 async function geocodeAll(name,count){
   const g=await (await om(`https://geocoding-api.open-meteo.com/v1/search?count=${count}&language=ru&name=`+encodeURIComponent(name))).json();
@@ -591,6 +627,8 @@ function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=b
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
   let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanV*H*1.5,Math.min(D.fut,center+spanV*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
   if(lo>hi){lo=D.gl;hi=D.gh}
+  if(CMP){const a=CMP.s[metric], i0=Math.max(0,Math.floor((center-spanV*H*1.5-CMP.t0)/H)), i1=Math.min(CMP.n-1,Math.ceil((Math.min(D.fut,center+spanV*H*1.5)-CMP.t0)/H));
+    for(let i=i0;i<=i1;i++){const v=a[i]; if(v==null) continue; if(v<lo)lo=v; if(v>hi)hi=v}}
   return M().lim(lo,hi);
 }
 function easeY(){
@@ -614,7 +652,7 @@ function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
 function render(){
   if(!D) return;
   const [g,W,Ht]=fit(chart);
-  const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin'].forEach(k=>C[k]=css('--'+k));
+  const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
   // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. Both ease in and out
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
   if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
@@ -719,6 +757,16 @@ function render(){
     g.save();g.beginPath();g.rect(0,0,Math.max(0,xn),Ht);g.clip();path(pts);g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore();
     if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
   });
+  // the compared city: a second solid line in its own colour, its name at its right end
+  if(CMP){const cs=[]; let cur=null; const put=(x,v)=>{if(v==null){cur=null;return} if(!cur) cs.push(cur=[]); cur.push([x,Y(v)])};
+    if(yr) for(let d=dayOf(t0)-DAY;d<=t1+DAY&&d<D.fut;d+=DAY) put(X(d+12*H),cmpDay(d));
+    else for(let t=Math.floor(t0/H)*H-H;t<=t1+H&&t<D.fut;t+=H) put(X(t),cmpAt(t));
+    const xc=Math.max(0,xn), cl=(a,b,al)=>{g.save();g.beginPath();g.rect(a,0,b-a,Ht);g.clip();g.globalAlpha=al;g.strokeStyle=C.cmp;g.lineJoin='round';g.lineWidth=pph>=3?2:1.5;
+      cs.forEach(pts=>{if(pts.length>1){path(pts);g.stroke()}});g.restore()};
+    cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
+    let lp=null; cs.forEach(pts=>pts.forEach(p=>{if(p[0]<=W-6&&(!lp||p[0]>lp[0]))lp=p}));
+    if(lp&&lp[0]>W*.4){g.font='600 11px '+MONO;g.textBaseline='middle';const nm=CMP.where.name, w=g.measureText(nm).width, by=lp[0]+w+10<=W;
+      tagText(g,nm,by?lp[0]+6:W-w-4,Math.max(top,Math.min(bot-10,by?lp[1]:lp[1]-14)),C.cmp,C.paper)}}
   // y labels
   g.textBaseline='middle';g.font='500 11px '+MONO;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
@@ -774,6 +822,7 @@ function render(){
   const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
+  {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
   readout(ci,yr,tq); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
@@ -793,6 +842,7 @@ function trio(i,isNow,tq,yr){
     const mt=M(), deg=v=>mt.num(Math.abs(v)).replace(/^[+−]/,'')+mt.unit, word=v=>v>0?mt.more:mt.less, dy=n-y, dt=t-n, same=v=>Math.abs(v)<mt.th[0];
     $('triSay1').textContent=same(dy)?'Так же, как вчера.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
     $('triSay2').textContent=same(dt)?'Завтра в среднем — так же.':`Завтра в среднем — на ${deg(dt)} ${word(dt)}.`;
+    if(cmpWant) cmpSay(n,t,cmpDay(d),cmpDay(d+DAY),' в среднем');
     return;
   }
   const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
@@ -805,6 +855,14 @@ function trio(i,isNow,tq,yr){
   const p1=same(dy)?'Так же, как вчера в это время.':`На ${deg(dy)} ${word(dy)}, чем вчера.`;
   const p2=same(dt)?'Завтра в это время — так же.':`Завтра в это время — на ${deg(dt)} ${word(dt)}.`;
   $('triSay1').textContent=p1; $('triSay2').textContent=p2;
+  if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
+}
+// on today, while comparing, the two lines speak of the other city instead of yesterday and tomorrow here
+function cmpSay(n,t,c,c2,mean){
+  const nm=cmpWant.name; if(!CMP){$('triSay1').textContent=nm+' — загружаем…'; $('triSay2').textContent='\u00a0'; return}
+  const h=c==null?null:byHow(c-n), h2=c2==null?null:byHow(c2-t);
+  $('triSay1').textContent=c==null?nm+' — прогноза на это время нет.':`${nm} — ${M().num(c)+M().unit}${mean}, ${h?h+', чем здесь':'как здесь'}.`;
+  $('triSay2').textContent=c2==null?'\u00a0':h2?`Завтра там ${h2}, чем здесь.`:'Завтра там — так же, как здесь.';
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
@@ -819,6 +877,8 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
   const tg=rel+(yr?' · средняя за день':metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
   const rain=rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо';
   $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])} · ${rain}`:`${M().num(rec.lo)}…${fmtV(rec.hi)} · ${rain}`;
+  const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
+  if(pin==null&&cmpWant){cmpLine(val,yr?day:tq??ms,yr);return}
   // difference with the pin, or with the current hour (the current day's mean in the year view)
   const ref=pin!=null?idxAt(pin):idxAt(D.now), el=$('delta'); el.textContent='';
   const rr=dayRec(D.t[ref]), refVal=yr?rr.sum/rr.n:(tq!=null&&pin==null&&inQ(D.now))?D.q.temp[qIdx(D.now)]:D.temp[ref];
@@ -830,7 +890,15 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
     el.append((yr?' к средней за ':' к ')+lab+' ');
     const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
   } else el.append(yr?' к средней за сегодня':' к '+(M().cur||'текущей'));
-  const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
+}
+// the compared city at the same local time (the same day's mean in the year view): its reading, and how it differs from here
+function cmpLine(val,t,yr){
+  const el=$('delta'), vd=$('verdict'), c=cmpVal(t,yr), b=document.createElement('b'); el.textContent=''; vd.className='verdict';
+  b.textContent=c==null?'—':M().num(c)+M().unit; const nm=document.createElement('span'); nm.className='cmp';
+  nm.textContent=cmpWant.name+(yr?' · средняя':'')+(CMP?c==null?' · нет прогноза на эту дату':'':' · загружаем'); el.append(b,nm);
+  const x=document.createElement('button');x.type='button';x.className='cmp';x.textContent='×';x.setAttribute('aria-label','Убрать сравнение');x.onclick=()=>setCmp(null);el.append(x);
+  if(c==null){vd.textContent='';return}
+  const h=byHow(c-val); vd.textContent=h?'Там '+h:'Там так же'; if(h) vd.className='verdict'+(c>val?' warm':' cool');
 }
 function setPin(ms){pin=ms;pinWant=null;store.set('pin',ms==null?null:String(ms));draw()}
 
@@ -1005,8 +1073,17 @@ function showSugg(list){const ul=$('sugg'); sugg=list; suggSel=-1; ul.textConten
 function hideSugg(){showSugg([])}
 function markSugg(){[...$('sugg').children].forEach((li,i)=>li.setAttribute('aria-selected',String(i===suggSel)));
   $('city').setAttribute('aria-activedescendant',suggSel>=0?'sg'+suggSel:'')}
-function pickSugg(i){const w=sugg[i]; if(!w) return; hideSugg(); $('city').value=w.name; $('city').blur();
-  setPin(null); load({name:w.name,lat:+w.lat.toFixed(3),lon:+w.lon.toFixed(3)},true)}
+function pickSugg(i){const w=sugg[i]; if(!w) return; hideSugg(); const p={name:w.name,lat:+w.lat.toFixed(3),lon:+w.lon.toFixed(3)};
+  if(vs){vsMode(false); $('city').blur(); setCmp(p); return}
+  $('city').value=w.name; $('city').blur(); setPin(null); load(p,true)}
+// the button by the city field: the field asks for a city to compare with (the same suggestions), and pressed again stops comparing
+let vs=false;
+function vsMode(on){vs=on; $('cityForm').classList.toggle('vs',on); $('cityLbl').textContent=on?'Сравнить с':'Город';
+  $('city').placeholder=on?'городом':'Город'; $('city').setAttribute('aria-label',on?'С каким городом сравнить':'Город');
+  if(on){$('city').value=''; $('city').focus()} else if(D&&D.where) $('city').value=D.where.name}
+$('cmpBtn').addEventListener('pointerdown',e=>{if(vs) e.preventDefault()}); // a second tap while choosing does not blur the field first
+$('cmpBtn').addEventListener('click',()=>{if(vs){hideSugg(); vsMode(false); $('city').blur(); return} if(cmpWant) setCmp(null); else vsMode(true)});
+showCmp();
 $('city').addEventListener('input',()=>{const q=$('city').value.trim(); clearTimeout(suggT);
   if(q.length<2){hideSugg();return}
   suggT=setTimeout(async()=>{suggQ=q; let r=[]; try{r=await geocodeAll(q,6)}catch(e){} if(suggQ===q&&document.activeElement===$('city')) showSugg(r)},250)});
@@ -1014,10 +1091,12 @@ $('city').addEventListener('keydown',e=>{if($('sugg').hidden) return;
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault(); suggSel=(suggSel+(e.key==='ArrowDown'?1:-1)+sugg.length)%sugg.length; markSugg()}
   else if(e.key==='Enter'&&suggSel>=0){e.preventDefault(); pickSugg(suggSel)}
   else if(e.key==='Escape'){hideSugg()}});
-$('city').addEventListener('blur',()=>setTimeout(hideSugg,150));
+$('city').addEventListener('keydown',e=>{if(e.key==='Escape'&&vs&&$('sugg').hidden) $('city').blur()});
+$('city').addEventListener('blur',()=>setTimeout(()=>{hideSugg(); if(vs&&document.activeElement!==$('city')) vsMode(false)},150));
 $('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('city').value.trim();
   if(sugg[0]&&suggQ===q){pickSugg(0);return} // Enter takes the first suggestion
-  $('city').blur();hideSugg();if(!q)return;
+  const v=vs; $('city').blur();hideSugg();if(v) vsMode(false);if(!q)return;
+  if(v){let w=null; try{w=await geocode(q)}catch(err){} if(w) setCmp(w); else toast(D&&D.sample?'Внутри Claude поиск городов не работает. Откройте tastex.github.io/termograf':'Город «'+q+'» не найден. Проверьте название'); return}
   $('chartbox').classList.add('loading');
   let w=null; try{w=await geocode(q)}catch(err){}
   if(!w){$('chartbox').classList.remove('loading');toast(D&&D.sample?'Внутри Claude поиск городов не работает. Откройте tastex.github.io/termograf':'Город «'+q+'» не найден. Проверьте название');return}

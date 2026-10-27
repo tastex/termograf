@@ -3,6 +3,8 @@
 //   /api/...     → https://api.open-meteo.com/...          (прогноз и последние месяцы)
 //   /archive/... → https://archive-api.open-meteo.com/...  (архив за годы)
 //   /geo/...     → https://geocoding-api.open-meteo.com/... (поиск городов)
+// Остальные адреса — сами страницы сайта (статические файлы из корня репозитория, см. "assets" в wrangler.jsonc):
+// так у каждой ветки и PR есть рабочее превью. Cloudflare отдаёт их раньше, чем доходит до этого кода.
 
 const HOSTS = {
   api: 'api.open-meteo.com',
@@ -16,9 +18,12 @@ const ALLOWED_ORIGINS = ['https://tastex.github.io'];
 // Страница сама хранит архив в памяти телефона.
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
+    // the site's own front page (every other page file is served before the worker is reached)
+    if (env && env.ASSETS && new URL(request.url).pathname === '/') return env.ASSETS.fetch(new URL('/index.html', request.url));
     const origin = request.headers.get('Origin') || '';
-    const allowed = !ALLOWED_ORIGINS.length || !origin || ALLOWED_ORIGINS.includes(origin);
+    // the pages served by this same worker (a branch preview, see wrangler.jsonc) may use it too
+    const allowed = !ALLOWED_ORIGINS.length || !origin || ALLOWED_ORIGINS.includes(origin) || origin === new URL(request.url).origin;
     const cors = {
       'Access-Control-Allow-Origin': allowed && origin ? origin : ALLOWED_ORIGINS[0] || '*',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
