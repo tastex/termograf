@@ -216,12 +216,15 @@ function keepView(f){const save=()=>{const v=f(); if(v) store.set('view',JSON.st
   document.querySelectorAll('.go a').forEach(a=>a.addEventListener('click',save))}
 // back after seven minutes away (screen off, another app): back(), as if the app were opened anew;
 // left on screen untouched: idle() every seven minutes, for an hour
-function onWake(back,idle){ let away=0, touched=Date.now(), last=Date.now();
-  const ret=()=>{if(away&&Date.now()-away>=IDLE){touched=last=Date.now(); back()} away=0};
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden') away=away||Date.now(); else ret()});
-  addEventListener('pageshow',e=>{if(e.persisted) ret()});
-  ['pointerdown','keydown','wheel'].forEach(k=>addEventListener(k,()=>touched=Date.now(),{capture:true,passive:true}));
-  if(idle) setInterval(()=>{const t=Date.now(); if(document.visibilityState==='visible'&&t-touched>=IDLE&&t-touched<3600e3&&t-last>=IDLE){last=t; idle()}},60000)}
+// A home-screen app is often frozen in the background without a word, so a pause in the page's own heartbeat counts as time away too
+function onWake(back,idle){ let away=0, beat=Date.now(), touched=Date.now(), last=Date.now();
+  const check=()=>{const t=Date.now(), gap=t-beat; beat=t;
+    if(document.visibilityState==='hidden'){away=away||t; return}
+    const gone=(away&&t-away>=IDLE)||gap>=IDLE; away=0; if(gone){touched=last=t; back()}};
+  document.addEventListener('visibilitychange',check); addEventListener('pageshow',check); addEventListener('focus',check);
+  ['pointerdown','keydown','wheel'].forEach(k=>addEventListener(k,()=>{check(); touched=Date.now()},{capture:true,passive:true}));
+  setInterval(()=>{check(); const t=Date.now();
+    if(idle&&document.visibilityState==='visible'&&t-touched>=IDLE&&t-touched<3600e3&&t-last>=IDLE){last=t; idle()}},10000)}
 function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
 function fmtT(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'')+Math.abs(r)+'°'}
 function fmtD(v){const r=Math.round(v);return (r>0?'+':r<0?'−':'±')+Math.abs(r)+'°'}
