@@ -471,14 +471,14 @@ async function loadCmp(w){
   try{const j=await cachedJ(fullUrl(w),15*60e3); if(!j||!j.hourly) throw omErr('net'); if(cmpWant!==w) return;
     const o=parse(j,w.lat); CMP={where:w,t0:o.t[0],n:o.t.length,s:o.s}; draw()}
   catch(e){ if(cmpWant!==w||CMP) return; const lim=e&&LIMIT_WAIT[e.kind];
-    toast(lim?`Погода для сравнения не загрузилась: сервис погоды ограничил число запросов. Попробуйте позже`:`Погода «${w.name}» не загрузилась. Проверьте интернет`)}
+    toast(lim?`Погода в городе ${w.name} не загрузилась: сервис погоды ограничил число запросов. Обновите страницу позже`:`Погода в городе ${w.name} не загрузилась. Проверьте интернет и обновите страницу`)}
 }
 function setCmp(w){ // a place, or null to stop comparing
-  if(w&&D&&D.where&&w.lat===D.where.lat&&w.lon===D.where.lon){toast('Это тот же город, что на графике');return}
+  if(w&&D&&D.where&&w.lat===D.where.lat&&w.lon===D.where.lon){toast('Этот город уже на графике. Выберите другой для сравнения');return}
   cmpWant=w; CMP=null; store.set('cmp',w?JSON.stringify(w):null); showCmp();
   if(w){setPin(null); if(D&&!D.sample) loadCmp(w); else toast('Внутри Claude сравнение не работает. Откройте tastex.github.io/termograf')} else draw();
 }
-function showCmp(){const b=$('cmpBtn'); b.setAttribute('aria-pressed',String(!!cmpWant)); b.setAttribute('aria-label',cmpWant?'Не сравнивать с городом '+cmpWant.name:'Сравнить с другим городом')}
+function showCmp(){const b=$('cmpBtn'); b.setAttribute('aria-pressed',String(!!cmpWant)); b.setAttribute('aria-label',cmpWant?'Убрать сравнение с городом '+cmpWant.name:'Сравнить с другим городом')}
 // the compared city's reading at t (between hours, along the line), its daily mean in the year view; null where it has none
 function cmpAt(t){if(!CMP) return null; const a=CMP.s[metric], k=(t-CMP.t0)/H, i=Math.floor(k);
   if(i<0||i>CMP.n-1) return null; const v0=a[i], v1=i<CMP.n-1?a[i+1]:v0; return v0==null||v1==null?null:v0+(v1-v0)*(k-i)}
@@ -861,7 +861,7 @@ function trio(i,isNow,tq,yr){
 function cmpSay(n,t,c,c2,mean){
   const nm=cmpWant.name; if(!CMP){$('triSay1').textContent=nm+' — загружаем…'; $('triSay2').textContent='\u00a0'; return}
   const h=c==null?null:byHow(c-n), h2=c2==null?null:byHow(c2-t);
-  $('triSay1').textContent=c==null?nm+' — нет прогноза.':`${nm} — ${M().num(c)+M().unit}${mean}, ${h||'так же'}.`;
+  $('triSay1').textContent=c==null?nm+' — прогноза на это время нет.':`${nm} — ${M().num(c)+M().unit}${mean}, ${h?h+', чем здесь':'как здесь'}.`;
   $('triSay2').textContent=c2==null?'\u00a0':h2?`Завтра там ${h2}, чем здесь.`:'Завтра там — так же, как здесь.';
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
@@ -896,7 +896,7 @@ function cmpLine(val,t,yr){
   const el=$('delta'), vd=$('verdict'), c=cmpVal(t,yr), b=document.createElement('b'); el.textContent=''; vd.className='verdict';
   b.textContent=c==null?'—':M().num(c)+M().unit; const nm=document.createElement('span'); nm.className='cmp';
   nm.textContent=cmpWant.name+(yr?' · средняя':'')+(CMP?c==null?' · нет прогноза на эту дату':'':' · загружаем'); el.append(b,nm);
-  const x=document.createElement('button');x.type='button';x.className='cmp';x.textContent='×';x.setAttribute('aria-label','Не сравнивать');x.onclick=()=>setCmp(null);el.append(x);
+  const x=document.createElement('button');x.type='button';x.className='cmp';x.textContent='×';x.setAttribute('aria-label','Убрать сравнение');x.onclick=()=>setCmp(null);el.append(x);
   if(c==null){vd.textContent='';return}
   const h=byHow(c-val); vd.textContent=h?'Там '+h:'Там так же'; if(h) vd.className='verdict'+(c>val?' warm':' cool');
 }
