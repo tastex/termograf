@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+cloudflare
+node_modules
+wrangler.jsonc
+.wrangler
+README.md
+LICENSE
+.nojekyll
+*.png.tmp

@@ -1,10 +1,14 @@
 // Cloudflare Workers Builds: при каждом пуше в main Cloudflare собирает зеркало Open-Meteo из этого репозитория.
 // "name" должен совпадать с именем воркера в панели Cloudflare.
 // Пустой "previews" нужен для сборок веток и PR (npx wrangler preview), на основной деплой он не влияет.
+// "assets": воркер отдаёт и сами страницы из корня репозитория (что не нужно — в .assetsignore), так что
+// ссылка превью в PR открывает сайт из ветки. Запросы /api, /archive, /geo по-прежнему идут в зеркало.
 {
   "name": "termograf",
   "main": "cloudflare/worker.js",
   "compatibility_date": "2025-09-01",
   "workers_dev": true,
-  "previews": {}
+  "previews": {},
+  // html_handling "none": three.html stays three.html (no redirects to /three, which the offline cache would trip on); "/" is index.html, see the worker
+  "assets": { "directory": ".", "binding": "ASSETS", "html_handling": "none" }
 }
