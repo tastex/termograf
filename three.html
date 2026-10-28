@@ -39,6 +39,7 @@ html{box-sizing:border-box}
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
+.brand{flex:none;margin-top:-6px;text-align:center;font:700 11px/12px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--fg)} /* text logo just below the top safe area: real capitals in the bold digits' font and colour (synthesised small caps came out thin and grey) */
 header{display:grid;grid-template-rows:22px auto 22px;row-gap:2px}
 .rel{text-align:right;font:500 16px/22px var(--f-body);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .when{font:500 16px/22px var(--f-body);white-space:nowrap;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
@@ -97,21 +98,13 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* iPhone home-screen app: never less than the status bar, even if Safari reports no inset */
-:root.ios-app{padding-top:max(env(safe-area-inset-top,0px),54px);padding-bottom:max(env(safe-area-inset-bottom,0px),20px)}
-/* text logo in the strip under the notch / Dynamic Island; shown only when that strip is tall enough */
-.brand{position:fixed;left:0;right:0;top:0;z-index:30;height:env(safe-area-inset-top,0px);display:none;align-items:flex-end;justify-content:center;padding-bottom:1px;box-sizing:border-box;pointer-events:none;
-  font:700 12px/12px var(--f-display);font-variant-caps:all-small-caps;letter-spacing:.14em;color:var(--fg)}
-:root.ios-app .brand{height:max(env(safe-area-inset-top,0px),54px)}
-.brand.on{display:flex}
-/* the page already starts below the status bar (inset not reported): centre the logo in the whole blank gap above the header */
-:root.ios-app .brand.mid{height:calc(max(env(safe-area-inset-top,0px),54px) + 14px);align-items:center;padding-bottom:0}</style>
+:root.ios-app{padding-top:max(env(safe-area-inset-top,0px),54px);padding-bottom:max(env(safe-area-inset-bottom,0px),20px)}</style>
 <script>if(navigator.standalone)document.documentElement.classList.add("ios-app")</script>
 </head>
 <body>
-<div class="brand" id="brand" aria-hidden="true">термограф</div>
-<script>(()=>{const b=document.getElementById("brand");const f=()=>{b.classList.remove("on");b.style.display="flex";const h=b.offsetHeight;b.style.display="";b.classList.toggle("on",h>=40);const p=document.createElement("div");p.style.height="env(safe-area-inset-top,0px)";document.body.append(p);b.classList.toggle("mid",p.offsetHeight<20);p.remove()};f();addEventListener("resize",f)})()</script>
 
 <div class="app">
+  <div class="brand" aria-hidden="true">термограф</div>
   <header>
     <div class="rel" id="rel">&nbsp;</div>
     <div class="row parts" id="parts">
