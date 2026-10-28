@@ -944,7 +944,7 @@ function cmpSay(n,t,c,c2,mean){
   const nm=cmpWant.name; if(!CMP){$('triSay1').textContent=nm+' — загружаем…'; $('triSay2').textContent='\u00a0'; return}
   const h=c==null?null:byHow(c-n), h2=c2==null?null:byHow(c2-t), here=D.where?inCity(D.where.name):'здесь', v=`${nm} — ${M().num(c)+M().unit}${mean}`;
   if(c==null) $('triSay1').textContent=nm+' — прогноза на это время нет'; else fitText($('triSay1'),h?[`${v}, ${h}, чем ${here}`,`${v}, ${h}`]:[`${v}, как ${here}`,`${v}, так же`]);
-  if(c2==null) $('triSay2').textContent='\u00a0'; else fitText($('triSay2'),h2?[`Завтра там ${h2}, чем ${here}`,`Завтра там ${h2}`]:[`Завтра там так же, как ${here}`,'Завтра там так же']);
+  if(c2==null) $('triSay2').textContent='\u00a0'; else $('triSay2').textContent=h2?`Завтра там ${h2}`:'Завтра там так же'; // the city here is named once, on the line above
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
