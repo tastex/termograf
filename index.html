@@ -758,19 +758,19 @@ function render(){
     if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
   });
   // the compared city: a second solid line in its own colour
+  let cityTags=[];
   if(CMP){const cs=[]; let cur=null; const put=(x,v)=>{if(v==null){cur=null;return} if(!cur) cs.push(cur=[]); cur.push([x,Y(v)])};
     if(yr) for(let d=dayOf(t0)-DAY;d<=t1+DAY&&d<D.fut;d+=DAY) put(X(d+12*H),cmpDay(d));
     else for(let t=Math.floor(t0/H)*H-H;t<=t1+H&&t<D.fut;t+=H) put(X(t),cmpAt(t));
     const xc=Math.max(0,xn), cl=(a,b,al)=>{g.save();g.beginPath();g.rect(a,0,b-a,Ht);g.clip();g.globalAlpha=al;g.strokeStyle=C.cmp;g.lineJoin='round';g.lineWidth=pph>=3?2:1.5;
       cs.forEach(pts=>{if(pts.length>1){path(pts);g.stroke()}});g.restore()};
     cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
-    // both cities are named at the right end of their lines, the labels kept apart when the lines run close
+    // both cities are named at the right end of their lines; where exactly is settled with the extremes' labels below
     const end=ss=>{let lp=null; ss.forEach(pts=>pts.forEach(p=>{if(p[0]<=W-6&&(!lp||p[0]>lp[0]))lp=p})); return lp&&lp[0]>W*.4?lp:null};
     g.font='600 11px '+MONO;g.textBaseline='middle';
     const tags=[[end(cs),CMP.where.name,C.cmp],[D.where?end(segs):null,D.where?.name,C.ink]].filter(t=>t[0]).map(([lp,nm,c])=>{const w=g.measureText(nm).width, by=lp[0]+w+10<=W;
-      return {x:by?lp[0]+6:W-w-4, y:by?lp[1]:lp[1]-14, nm, c}});
-    if(tags.length===2){const [a,b]=tags[0].y<=tags[1].y?tags:[tags[1],tags[0]], gap=16-(b.y-a.y); if(gap>0){a.y-=gap/2; b.y+=gap/2}}
-    tags.forEach(t=>tagText(g,t.nm,t.x,Math.max(top,Math.min(bot-10,t.y)),t.c,C.paper))}
+      return {x:by?lp[0]+6:W-w-4, y:by?lp[1]:lp[1]-14, w, nm, c}});
+    cityTags=tags}
   // y labels
   g.textBaseline='middle';g.font='500 11px '+MONO;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
@@ -784,10 +784,17 @@ function render(){
   if(dayW>=40){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
   g.font='600 11px '+MONO;g.textBaseline='middle';
   const onLine=t=>yr?null:fine&&inQ(t)?curveAt(t,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
-  ext.forEach(([[t,v],s])=>{const x=X(t),y=Y(onLine(t)??v),c=s>0?C.hot:C.cold,txt=fmtS(v),w=g.measureText(txt).width;
-    g.beginPath();g.arc(x,y,3,0,7);g.fillStyle=c;g.fill();
-    const tx=Math.min(W-w-3,Math.max(3,x-w/2)), ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
-    tagText(g,txt,tx,ty,c,C.paper)});
+  const exL=ext.map(([[t,v],s])=>{const x=X(t),y=Y(onLine(t)??v),c=s>0?C.hot:C.cold,txt=fmtS(v),w=g.measureText(txt).width;
+    return {x,y,c,txt,tx:Math.min(W-w-3,Math.max(3,x-w/2)),ty:s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13),w}});
+  // the city names step up or down off the extremes' labels and each other; with no free place left, the extreme's number gives way (its dot stays)
+  const hit=(a,b)=>a.x<b.x+b.w+6&&b.x<a.x+a.w+6&&Math.abs(a.y-b.y)<15, placed=[];
+  cityTags.forEach(t=>{const y0=t.y; let ok=false;
+    for(const d of [0,-16,16,-32,32,-48,48]){t.y=Math.max(top,Math.min(bot-10,y0+d));
+      if(!placed.some(p=>hit(t,p))&&!exL.some(e=>hit(t,{x:e.tx,y:e.ty,w:e.w}))){ok=true;break}}
+    if(!ok){t.y=Math.max(top,Math.min(bot-10,y0)); exL.forEach(e=>{if(hit(t,{x:e.tx,y:e.ty,w:e.w})) e.txt=null})}
+    placed.push(t)});
+  exL.forEach(e=>{g.beginPath();g.arc(e.x,e.y,3,0,7);g.fillStyle=e.c;g.fill(); if(e.txt) tagText(g,e.txt,e.tx,e.ty,e.c,C.paper)});
+  g.font='600 11px '+MONO; placed.forEach(t=>tagText(g,t.nm,t.x,t.y,t.c,C.paper));
   // now marker
   if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(snapPx(xn),top-8);g.lineTo(snapPx(xn),bot);g.stroke();g.setLineDash([]);
     g.textBaseline='alphabetic';g.font='500 11px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
