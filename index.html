@@ -477,8 +477,8 @@ async function load(where, announce){
 // 15-minute readings for yesterday, today and tomorrow (native in Central Europe and North America, interpolated from hourly elsewhere)
 function hourlyAt(t,a=D.temp){const k=(t-D.t[0])/H, i=Math.max(0,Math.min(D.t.length-2,Math.floor(k))), u=Math.max(0,Math.min(1,k-i)); return a[i]+(a[i+1]-a[i])*u}
 function setQ(t0,s,rain,code){ // s: one array per series, like D.s
-  const n=s.temp.length; SK.forEach(c=>{const a=s[c]; for(let k=0;k<n;k++) if(a[k]==null) a[k]=hourlyAt(t0+k*Q,D.s[c])});
-  D.q={t0,n,end:t0+(n-1)*Q,s,rain:rain.map(v=>v||0),code}; useCols(D); draw();
+  const n=s.temp.length, onNow=D.t&&!drag&&center===nowRead(); // the cursor waits on "now": it moves on to the quarter hour that has just arrived SK.forEach(c=>{const a=s[c]; for(let k=0;k<n;k++) if(a[k]==null) a[k]=hourlyAt(t0+k*Q,D.s[c])});
+  D.q={t0,n,end:t0+(n-1)*Q,s,rain:rain.map(v=>v||0),code}; useCols(D); if(onNow){center=nowRead();clamp()} draw();
 }
 function useCols(o){o.temp=o.s[metric]; if(o.q) o.q.temp=o.q.s[metric]} // the series on screen
 async function loadQ(where){
@@ -675,8 +675,11 @@ function clamp(){center=Math.min(maxC(),Math.max(minC(),center))}
 function goToday(){ // cursor on the reading that stands for "now" (the same one the now line is drawn at)
   fzOn=false;slowMs=0;
   D.now=Date.now()+D.off; // the page may have been asleep for hours (home-screen app): use the clock, not the load time
-  center=snapNow?snapNow(D.now):D.t[idxAt(D.now)]; pull=0; clamp(); draw();
+  center=snapNow?snapNow(D.now):nowRead(); pull=0; clamp(); draw();
 }
+// the reading that stands for "now": the current quarter hour while the 15-minute data covers it, in any scale but the year one
+// (at 16:40 that is 16:45, not 17:00); without that data, the nearest hour
+const nowQ=()=>D.q&&inQ(D.now)?D.q.t0+qIdx(D.now)*Q:null, nowRead=()=>nowQ()??D.t[idxAt(D.now)];
 function idxAt(ms){return Math.max(0,Math.min(D.t.length-1,Math.round((ms-D.t[0])/H)))}
 function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
@@ -733,7 +736,9 @@ function render(){
   const pph=W/spanV, fine=pph>=8&&!!D.q;
   // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
   // so the cursor sits exactly on a reading; swiped fast, the chart runs smoothly and the dot glides along the curve
-  const yrv=pph*24<4, snapAt=t=>yrv?dayOf(t)+12*H:fine&&inQ(t)?D.q.t0+qIdx(t)*Q:D.t[idxAt(t)];
+  // zoomed out, the current quarter hour is one more reading to stop on, between the hours around it
+  const yrv=pph*24<4, nq=yrv?null:nowQ(), snapAt=t=>{if(yrv) return dayOf(t)+12*H; if(fine&&inQ(t)) return D.q.t0+qIdx(t)*Q;
+    const h=D.t[idxAt(t)]; return nq!=null&&Math.abs(t-nq)<=Math.abs(t-h)?nq:h};
   snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -905,13 +910,13 @@ function render(){
   g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
-  const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
+  const tq=!yr&&(fine&&inQ(vc)||vc===nq)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
   readout(ci,yr,tq); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
-  const atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
+  const atNow=pin==null&&pull===0&&spd<3&&dayOf(tq??D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
   if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
   const hd=document.querySelector('header'); hd.classList.toggle('now',atNow); if(!hd.classList.contains('ready')) setTimeout(()=>hd.classList.add('ready'),400);
-  $('today').disabled=Math.abs(center-nowAt)<(yrv?DAY:fine?Q:H)/2; // only when the cursor already stands on the current reading
+  $('today').disabled=Math.abs(center-nowAt)<(yrv?DAY:fine||nq!=null?Q:H)/2; // only when the cursor already stands on the current reading
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
@@ -947,7 +952,7 @@ function cmpSay(n,t,c,c2,mean){
   if(c2==null) $('triSay2').textContent='\u00a0'; else $('triSay2').textContent=h2?`Завтра там ${h2}`:'Завтра там так же'; // the city here is named once, on the line above
 }
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
-  const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
+  const ms=tq??D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms); // 23:45 belongs to its own day, not to the next hour's
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
   if(!rec||D.temp[i]!==D.temp[i]){ // a year not loaded yet
     const paused=!busy&&D.err&&Date.now()<D.wait;
@@ -1218,7 +1223,7 @@ keepView(()=>{ if(!D) return null; // the scale and the day stay as they came wh
 });
 // keep "now" current while the page is open; back after seven minutes away: today and fresh data,
 // left untouched on screen: fresh data where the view stands (unless it is deep in the archive, which a reload would drop)
-setInterval(()=>{if(D){D.now=Date.now()+D.off;draw()}},60000);
+setInterval(()=>{if(D){const on=!drag&&center===nowRead(); D.now=Date.now()+D.off; if(on){center=nowRead();clamp()} draw()}},60000); // a cursor left on "now" moves on with it
 const refresh=()=>{if(D&&!D.sample&&D.where&&Date.now()-D.at>=IDLE) load(D.where,false)};
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&D){D.now=Date.now()+D.off;draw()}});
 onWake(()=>{ if(!D) return; viewWant=null; vc=null; yMin=null; goToday(); refresh() },
