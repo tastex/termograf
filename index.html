@@ -29,7 +29,7 @@
 /* Layout: one screen — readout on top, draggable thermograph ribbon fills the middle, 3‑month overview strip as a scrubber below */
 :root{
   --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
-  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13); --rain:#2f86b8;
+  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13); --rain:#2f86b8; --snow:#7b8fa8;
   --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --night:rgba(44,62,104,.06); --hot:#c2482a; --cold:#1f74b5; --pin:#b07400; --cmp:#0b8670; --warn:#8a5a00; --warn-bg:#fff3d6;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -37,11 +37,11 @@
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
-  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
+  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6; --snow:#c4c0f0;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
 :root[data-theme="dark"]{
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
-  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
+  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6; --snow:#c4c0f0;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
 html,body{height:100%}
 html{box-sizing:border-box} /* the safe-area padding on the root stays inside the screen height (home-screen app on iPhone) */
@@ -75,6 +75,13 @@ header.now .trio{opacity:1;visibility:visible}
 #triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
+.days3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:12px;font:400 13px/17px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
+.days3>div{min-width:0;display:flex;flex-direction:column}
+.days3>div>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.days3 small{font:500 13px/17px var(--f-body)}
+.days3>div:nth-child(2) small{color:var(--ink)}
+.days3 .p{color:var(--fg)}.days3 .p.rain{color:var(--rain)}.days3 .p.snow{color:var(--snow)}
+.days3 .w.strong{color:var(--hot);font-weight:500}
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
   touch-action:pan-y;cursor:grab;user-select:none}
 .chartbox:active{cursor:grabbing}
@@ -189,6 +196,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
   </header>
+  <!-- the day under the cursor and its neighbours: rain or snow and wind for each, so the whole picture compares at a glance -->
+  <div class="days3" id="days3" aria-live="polite"><div><small>&nbsp;</small><span class="p">&nbsp;</span><span class="w">&nbsp;</span></div><div><small>&nbsp;</small><span class="p">&nbsp;</span><span class="w">&nbsp;</span></div><div><small>&nbsp;</small><span class="p">&nbsp;</span><span class="w">&nbsp;</span></div></div>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf</div>
   <div class="chartbox" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><span></span></button></div>
@@ -596,20 +605,27 @@ function reach(t){
   applyView(); applyPin(); draw();
 }
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
+// a day's record: the shown series' range and mean, and, whatever is shown, its rain and snow (mm of water), strongest wind and gust, thunder
+const newDay=(k,v)=>({k,hi:v,lo:v,sum:0,n:0,r:0,sn:0,w:0,g:0,th:false});
+// snow by the weather code; where the code is missing, by the temperature
+const SNOWC=new Set([71,73,75,77,85,86]), isSnow=(c,t)=>c===c&&c!=null?SNOWC.has(c):t<=0.5;
+function addHour(d,i,v){const r=D.rain[i]||0, c=D.code[i], w=D.s.wind[i], g=D.s.gust[i];
+  if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=r; if(r>0&&isSnow(c,D.s.temp[i])) d.sn+=r;
+  if(w>d.w)d.w=w; if(g>d.g)d.g=g; if(c>=95) d.th=true}
 function rebuildDays(){ // one record per day, so wide views and the overview never walk every hour while scrolling
   const d0=dayOf(D.t[0]), n=Math.round((dayOf(D.t[D.t.length-1])-d0)/DAY)+1, days=new Array(n);
   let gl=1e9,gh=-1e9;
   for(let i=0;i<D.t.length;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i];if(v!==v)continue;let d=days[j]; // NaN: a year not loaded yet
-    if(!d)d=days[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
-    if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
-  D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey='';
+    if(!d)d=days[j]=newDay(d0+j*DAY,v);
+    addHour(d,i,v); if(v<gl)gl=v; if(v>gh)gh=v}
+  D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey=''; D.dv=(D.dv||0)+1;
 }
 function prependDays(cut){ // the days of the hours just put in front; the days already there are kept as they are
   const d0=dayOf(D.t[0]), n=Math.round((D.d0-d0)/DAY), add=new Array(Math.max(0,n)); let gl=D.gl,gh=D.gh;
   for(let i=0;i<cut;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i]; if(v!==v) continue; let d=j<n?add[j]:D.days[j-n];
-    if(!d)d=add[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
-    if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
-  D.d0=d0; D.days=add.concat(D.days); D.gl=gl; D.gh=gh; ovKey='';
+    if(!d)d=add[j]=newDay(d0+j*DAY,v);
+    addHour(d,i,v); if(v<gl)gl=v; if(v>gh)gh=v}
+  D.d0=d0; D.days=add.concat(D.days); D.gl=gl; D.gh=gh; ovKey=''; D.dv++;
 }
 // Older hours go in front, a year at a time, for as long as someone scrolls back (eighty years are seven hundred thousand hours).
 // Each series lives at the end of a bigger buffer with free room before it, so a year of archive copies only that year,
@@ -723,7 +739,7 @@ function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
 function render(){
   if(!D) return;
   const [g,W,Ht]=fit(chart);
-  const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
+  const C={};['grid','grid-strong','ink','ink-soft','rain','snow','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
   // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. Both ease in and out
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
   if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
@@ -802,11 +818,12 @@ function render(){
       cur=nx}}
   // rain bars
   const iEnd=idxAt(D.fut-H), i0=Math.max(0,idxAt(t0)-2), i1=Math.min(iEnd,idxAt(t1)+2);
-  g.fillStyle=C.rain; g.globalAlpha=.55;
+  g.globalAlpha=.55; // snow in its own colour; in the year view the snow part of a day sits at the bottom of its bar
   const days=yr?dayRange(t0-DAY,Math.min(t1,D.fut-H)):[]; if(yr){
-    days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH);g.fillRect(X(d.k),Ht-4-h,Math.max(1,dayW-.3),h)}})}
-  else{ if(fine){const q=D.q, w=pph/4; for(let k=qIdx(t0-H);k<=qIdx(t1+H);k++){const r=q.rain[k];if(r>0){const h=Math.max(1.5,Math.min(1,r/0.75)*rainH);g.fillRect(X(q.t0+k*Q)-w/2+.5,Ht-4-h,Math.max(1,w-1),h)}}}
-  for(let i=i0;i<=i1;i++){if(fine&&inQ(D.t[i]))continue;const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}}
+    days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH), hs=h*d.sn/d.r, x=X(d.k), w=Math.max(1,dayW-.3);
+      g.fillStyle=C.rain;g.fillRect(x,Ht-4-h,w,h-hs); g.fillStyle=C.snow;g.fillRect(x,Ht-4-hs,w,hs)}})}
+  else{ if(fine){const q=D.q, w=pph/4; for(let k=qIdx(t0-H);k<=qIdx(t1+H);k++){const r=q.rain[k];if(r>0){const h=Math.max(1.5,Math.min(1,r/0.75)*rainH);g.fillStyle=isSnow(q.code[k],q.s.temp[k])?C.snow:C.rain;g.fillRect(X(q.t0+k*Q)-w/2+.5,Ht-4-h,Math.max(1,w-1),h)}}}
+  for(let i=i0;i<=i1;i++){if(fine&&inQ(D.t[i]))continue;const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillStyle=isSnow(D.code[i],D.s.temp[i])?C.snow:C.rain;g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}}
   g.globalAlpha=1;
   // pinned reference line
   if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
@@ -906,7 +923,7 @@ function render(){
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
-  readout(ci,yr,tq); drawOv(C);
+  readout(ci,yr,tq); days3(D.t[ci]); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
   const atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
   if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
@@ -972,6 +989,21 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
     el.append((yr?' к средней за ':' к ')+lab+' ');
     const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
   } else el.append(yr?' к средней за сегодня':' к '+(M().cur||'текущей'));
+}
+// the day under the cursor between the day before and the day after: rain or snow over the day, and the wind.
+// The wind turns red once the gusts reach 15 m/s, the strong wind of the weather service's warnings
+const mmS=v=>v<9.95?String(Math.round(v*10)/10).replace('.',','):String(Math.round(v));
+function precipOf(d){if(d.r<0.05) return ['сухо',''];
+  const s=d.sn/d.r, kind=s>0.7?'снег':s<0.3?(d.th?'гроза':'дождь'):'дождь, снег';
+  return [kind+' '+mmS(d.r)+'\u202fмм',s>0.7?'snow':'rain']}
+let d3Key='';
+function days3(ms){
+  const day=dayOf(ms), key=day+'|'+relDay(day)+'|'+D.dv+'|'+D.fut; if(key===d3Key) return; d3Key=key;
+  [...$('days3').children].forEach((el,j)=>{const k=day+(j-1)*DAY, d=k>=D.fut?null:dayRec(k), rel=REL[relDay(k)], dt=new Date(k);
+    const [lab,p,w]=el.children; lab.textContent=rel?rel[0].toUpperCase()+rel.slice(1):WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()];
+    if(!d||d.n<1){p.textContent='—'; p.className='p'; w.textContent='\u00a0'; w.className='w'; return}
+    const [pt,pc]=precipOf(d); p.textContent=pt; p.className='p'+(pc?' '+pc:'');
+    const strong=d.g>=15; w.textContent=strong?`порывы ${Math.round(d.g)}\u202fм/с`:d.w<0.5?'штиль':`ветер до ${Math.round(d.w)}\u202fм/с`; w.className='w'+(strong?' strong':'')})
 }
 // the compared city at the same local time (the same day's mean in the year view): its reading, and how it differs from here
 function cmpLine(val,t,yr){
