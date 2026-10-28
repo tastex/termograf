@@ -1,5 +1,5 @@
 // Термограф: the page itself works offline; weather requests always go to the network.
-const CACHE = 'termograf-v41';
+const CACHE = 'termograf-v44';
 const SHELL = ['./', './index.html', './three.html', './years.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon.png',
   './fonts/unbounded-cyr.woff2', './fonts/unbounded-lat.woff2', './fonts/golos-cyr.woff2', './fonts/golos-lat.woff2', './fonts/golos-latext.woff2'];
 

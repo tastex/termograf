@@ -292,7 +292,7 @@ async function place(){
 }
 let FP=null, Fcur=null, loadN=0;
 async function load(){
-  const w=W0=await place(); $('city').textContent=w.name;
+  const w=W0=await place(); w.name=String(w.name||'').replace(/^(город|г\.)\s+/i,'')||w.name; $('city').textContent=w.name;
   const qs='?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('back').href='./'+qs; $('x3').href='three.html'+qs;
   // the forecast once, for every mode at a time; the archive per mode
   const kf='yrf2:'+w.lat+','+w.lon; let F0=null; try{F0=JSON.parse(store.get(kf)||'null')}catch(e){}
