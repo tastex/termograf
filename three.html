@@ -301,7 +301,7 @@ async function place(){
 }
 const P=s=>Date.parse(s+(s.length===16?':00Z':'Z'));
 async function load(){
-  const w=W0=await place(); $('city').textContent=w.name;
+  const w=W0=await place(); w.name=String(w.name||'').replace(/^(город|г\.)\s+/i,'')||w.name; $('city').textContent=w.name;
   $('back').href='./?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('yr').href='years.html'+new URL($('back').href).search;
   const use=j=>{const now=Date.now()+j.utc_offset_seconds*1000; setDays(daysFrom(j.hourly.time.map(P),hourly(j),now),now)};
   const u=`https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}&hourly=${VARS}&daily=sunrise,sunset&past_days=92&forecast_days=16&wind_speed_unit=ms&timezone=auto`;
