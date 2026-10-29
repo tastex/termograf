@@ -72,12 +72,18 @@ header.now .trio{opacity:1;visibility:visible}
    On a phone they keep to the right edge, on a wide screen they stay near the big number */
 .trio{display:grid;grid-template-columns:auto minmax(12px,1fr) fit-content(86px) fit-content(86px);grid-template-rows:22px 64px 20px 29px 20px;row-gap:3px;column-gap:20px}
 .trio>*{min-width:0}
-.trio .tag{grid-row:1;grid-column:1/3;justify-self:stretch;text-align:left}
+.trio .tag{grid-row:1;grid-column:1/3;justify-self:stretch;text-align:left;width:0;min-width:100%} /* takes the room it is given, never widens the columns */
 #triN{grid-row:2;grid-column:1}
 #triNd{grid-row:3;grid-column:1/3;flex-direction:row;gap:14px;margin-top:-4px}
 .tcol{grid-row:1/4;align-self:start;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
 .ty{grid-column:3}.tt{grid-column:4}
-.tl{font:500 16px/22px var(--f-body);color:var(--fg)}
+.tl{display:flex;align-items:center;gap:6px;max-width:100%;font:500 16px/22px var(--f-body);color:var(--fg);white-space:nowrap}
+.tl span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tl.pin{color:var(--pin)}.tl.cmp{color:var(--cmp)}
+.tl .x{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:20px;height:20px;display:grid;place-items:center;font:500 14px/1 var(--f-body);color:inherit;background:transparent;border:1px solid currentColor;border-radius:50%;padding:0;cursor:pointer}
+.tl .x[hidden]{display:none}
+/* the pin or the compared city: one column on the right, as wide as the two */
+.trio.one .tt{display:none}.trio.one .ty{grid-column:3/5}
 .tn{font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:-1px}
 .wxc{display:flex;flex-direction:column;min-width:0;max-width:100%}
 /* yesterday's and tomorrow's rain and wind as a little table: icons under each other, then the word, then the number by its digits, then the unit */
@@ -207,8 +213,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <div class="tag" id="triTop">&nbsp;</div>
       <div class="temp" id="triN">—</div>
       <div class="wxc" id="triNd"><span class="wx p"></span><span class="wx w"></span></div>
-      <div class="tcol ty" id="triYd"><small class="tl">Вчера</small><b class="tn" id="triY">—</b><div class="wxt"></div></div>
-      <div class="tcol tt" id="triTd"><small class="tl">Завтра</small><b class="tn" id="triT">—</b><div class="wxt"></div></div>
+      <div class="tcol ty" id="triYd"><div class="tl"><span>Вчера</span><button type="button" class="x" hidden>×</button></div><b class="tn" id="triY">—</b><div class="wxt"></div></div>
+      <div class="tcol tt" id="triTd"><div class="tl"><span>Завтра</span><button type="button" class="x" hidden>×</button></div><b class="tn" id="triT">—</b><div class="wxt"></div></div>
       <div class="tri-say" id="triSay1">&nbsp;</div>
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
@@ -513,12 +519,15 @@ async function loadQ(where){
     setQ(t0,qs,rain,code); return;
   }
 }
+// A place's name without the kind of place in front: «город Тверь», «г. Тверь», «посёлок …» are just «Тверь»
+const KIND=/^(город|г\.|городской округ|городское поселение|посёлок городского типа|поселок городского типа|рабочий посёлок|рабочий поселок|пгт\.?|посёлок|поселок|село|деревня|станица|аул)\s+/i;
+function cleanName(n){const c=String(n||'').trim().replace(KIND,'').replace(/\s+(городской округ|муниципальный округ)$/i,'').trim(); return c||String(n||'')}
 // The city to compare with: its forecast from three months back to sixteen days ahead (no archive), by its own local clock,
 // so 15:00 here is set against 15:00 there. It is drawn as a second line, and the header says how it differs from here
 let CMP=null, cmpWant=null; try{const c=JSON.parse(store.get('cmp')||'null'); if(c&&isFinite(c.lat)&&isFinite(c.lon)){c.name=cleanName(c.name); cmpWant=c}}catch(e){}
 async function loadCmp(w){
   try{const j=await cachedJ(fullUrl(w),15*60e3); if(!j||!j.hourly) throw omErr('net'); if(cmpWant!==w) return;
-    const o=parse(j,w.lat); CMP={where:w,t0:o.t[0],n:o.t.length,s:o.s}; draw()}
+    const o=parse(j,w.lat); CMP={where:w,t0:o.t[0],n:o.t.length,s:o.s,rain:o.rain,code:o.code}; draw()}
   catch(e){ if(cmpWant!==w||CMP) return; const lim=e&&LIMIT_WAIT[e.kind];
     toast(lim?`Погода в городе ${w.name} не загрузилась: сервис погоды ограничил число запросов. Обновите страницу позже`:`Погода в городе ${w.name} не загрузилась. Проверьте интернет и обновите страницу`)}
 }
@@ -535,9 +544,6 @@ function cmpDay(d){if(!CMP) return null; const a=CMP.s[metric], i0=Math.round((d
   for(let i=Math.max(0,i0);i<Math.min(CMP.n,i0+24);i++) if(a[i]!=null){s+=a[i];n++} return n>=20?s/n:null}
 const cmpVal=(t,yr)=>yr?cmpDay(t):cmpAt(t);
 // "на 4° холоднее" — how much and which way, or null when the difference is too small to notice
-// A place's name without the kind of place in front: «город Тверь», «г. Тверь», «посёлок …» are just «Тверь»
-const KIND=/^(город|г\.|городской округ|городское поселение|посёлок городского типа|поселок городского типа|рабочий посёлок|рабочий поселок|пгт\.?|посёлок|поселок|село|деревня|станица|аул)\s+/i;
-function cleanName(n){const c=String(n||'').trim().replace(KIND,'').replace(/\s+(городской округ|муниципальный округ)$/i,'').trim(); return c||String(n||'')}
 // «в Москве», «во Владимире», «в Нижнем Новгороде»: where, with the name declined the usual way. Names that do not decline,
 // or that these rules cannot place, stay as they are («в Сочи», «в Иваново»)
 const NODECL=new Set(['сочи','тбилиси','хельсинки','дели','бали','майами','баку','чикаго','торонто','осло','монако','кале','гоа','перу','алматы']);
@@ -573,7 +579,9 @@ function inCity(name){
 const prep=w=>/^[вф][бвгджзйклмнпрстфхцчшщ]/i.test(w)?'во':'в';
 const capF=t=>t[0].toUpperCase()+t.slice(1);
 // the text that fits on its line: the fullest of the variants that does not run past the edge
-function fitText(el,variants){for(const t of variants){el.textContent=t; if(el.scrollWidth<=el.clientWidth+1) return}}
+// the first wording that fits the element's width, measured to the fraction of a pixel (scrollWidth rounds, and a text half a pixel
+// too wide still ends in an ellipsis)
+function fitText(el,variants){const r=document.createRange(); for(const t of variants){el.textContent=t; r.selectNodeContents(el); if(r.getBoundingClientRect().width<=el.getBoundingClientRect().width+.01) return}}
 function byHow(d){const m=M(); return Math.abs(d)<m.th[0]?null:`на ${m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit} ${d>0?m.more:m.less}`}
 const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
 async function geocodeAll(name,count){
@@ -939,53 +947,76 @@ function render(){
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
   readout(ci,yr,tq); drawOv(C);
-  // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
-  const atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
-  if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
-  const hd=document.querySelector('header'); hd.classList.toggle('now',atNow); if(!hd.classList.contains('ready')) setTimeout(()=>hd.classList.add('ready'),400);
+  // the header with the neighbours on the right for every loaded reading; a year still loading keeps the plain one, which says so
+  const loaded=!inHole(D.t[ci])&&!!dayRec(D.t[ci])&&D.temp[ci]===D.temp[ci];
+  if(loaded) trio(ci,!yr&&(tq!=null?tq===nowAt:ci===idxAt(nowAt)),tq,yr);
+  const hd=document.querySelector('header'); hd.classList.toggle('now',loaded); if(!hd.classList.contains('ready')) setTimeout(()=>hd.classList.add('ready'),400);
   $('today').disabled=Math.abs(center-nowAt)<(yrv?DAY:fine?Q:H)/2; // only when the cursor already stands on the current reading
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
 const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.now).getUTCFullYear()?' '+y:''};
+// The header for any reading: what and when on top, the reading big, and on the right the day before and the day after at the same
+// time (daily means in the year view), or the pin, or the compared city; under each its day's rain or snow and wind; then two phrases
+// on how they differ. Only redrawn when something in it changes, since it is asked for on every frame of a swipe
+let triKey='';
+const relName=k=>{const r=relDay(k); return Math.abs(r)<=1?REL[r]:null}; // «вчера», «сегодня», «завтра»; further away, a date
+const dayName=k=>{const r=relName(k), dt=new Date(k); return r?capF(r):WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]};
+function triCol(el,label,cls,val,rec,onX){const l=el.querySelector('.tl'), x=l.querySelector('button');
+  l.className='tl'+(cls?' '+cls:''); l.firstChild.textContent=label; x.hidden=!onX; x.onclick=onX; if(onX) x.setAttribute('aria-label',cls==='pin'?'Снять метку':'Убрать сравнение');
+  el.querySelector('.tn').textContent=val==null||val!==val?'—':fmtS(val); el._rec=rec}
 function trio(i,isNow,tq,yr){
-  if(yr){ // year view: daily means of yesterday, today and tomorrow
-    const m=ms=>{const r=dayRec(ms);return r?r.sum/r.n:NaN}, d=dayOf(D.now), n=m(d), y=m(d-DAY), t=m(d+DAY);
-    $('triTop').textContent='Сегодня · средняя за день';
-    bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t); triWx(d);
-    const mt=M(), deg=v=>mt.num(Math.abs(v)).replace(/^[+−]/,'')+mt.unit, word=v=>v>0?mt.more:mt.less, dy=n-y, dt=t-n, same=v=>Math.abs(v)<mt.th[0];
-    triSay(d,same(dy)?['Так же, как вчера','Как вчера']:[`На ${deg(dy)} ${word(dy)}, чем вчера`],same(dt)?['Завтра в среднем — так же','Завтра — так же']:[`Завтра в среднем — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
-    if(cmpWant) cmpSay(n,t,cmpDay(d),cmpDay(d+DAY),' в среднем');
-    return;
+  const ms=yr?dayOf(D.t[i]):tq??D.t[i], d=dayOf(ms), mode=pin!=null?'pin':cmpWant?'cmp':'days';
+  const key=[ms,isNow,yr,metric,mode,pin,!!CMP,cmpWant&&cmpWant.name,D.dv,D.now,D.q&&D.q.t0,innerWidth,document.fonts&&document.fonts.status].join('|'); if(key===triKey) return; triKey=key;
+  const mean=r=>r&&r.n?r.sum/r.n:NaN, qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
+  const at=t=>yr?mean(dayRec(t)):t<D.t[0]||t>D.t[D.t.length-1]?NaN:tq!=null?qv(t):D.temp[idxAt(t)];
+  const n=at(ms), m=M(), time=yr?'':tq!=null?hm(ms):hh(ms), what=yr?'средняя за день':metric!=='temp'?m.name.toLowerCase():WC[D.code[i]]||'';
+  bigNum($('triN'),n); wxCol($('triNd'),dayRec(d));
+  const deg=v=>m.num(Math.abs(v)).replace(/^[+−]/,'')+m.unit, word=v=>v>0?m.more:m.less, same=v=>Math.abs(v)<m.th[0];
+  const prevN=relName(d-DAY)||'накануне', nextN=relName(d+DAY)||'назавтра', still=yr?' в среднем':' в это время';
+  $('trio').classList.toggle('one',mode!=='days');
+  if(mode==='pin'){ // the pin's reading next to this one
+    const pv=yr?mean(dayRec(pin)):D.temp[idxAt(pin)], pr=REL[relDay(pin)], pd=new Date(pin);
+    triCol($('triYd'),(pr?capF(pr):pd.getUTCDate()+' '+MON[pd.getUTCMonth()]+withYear(pin))+(yr?'':', '+hh(pin)),'pin',pv,dayRec(pin),()=>setPin(null));
+    const dv=n-pv, e=wxDiff(dayRec(pin),dayRec(d)), b=same(dv)?['Так же, как на метке']:[`На ${deg(dv)} ${word(dv)}, чем на метке`];
+    fitText($('triSay1'),triJoin(b,same(dv),e));
+    const nw=yr?mean(dayRec(D.now)):D.temp[idxAt(D.now)], dn=n-nw;
+    $('triSay2').textContent=isNow||nw!==nw?' ':same(dn)?(yr?'Так же, как сегодня':'Так же, как сейчас'):`На ${deg(dn)} ${word(dn)}, чем ${yr?'сегодня':'сейчас'}`;
+  } else if(mode==='cmp'){ // the other city at the same local time
+    const c=cmpVal(yr?d:ms,yr), c2=cmpVal(yr?d+DAY:ms+DAY,yr);
+    triCol($('triYd'),cmpWant.name,'cmp',c,cmpRec(d),()=>setCmp(null));
+    cmpSay(n,at(ms+DAY),c,c2,yr?' в среднем':'',nextN);
+  } else { // the day before and the day after
+    const y=at(ms-DAY), t=at(ms+DAY);
+    triCol($('triYd'),dayName(d-DAY),'',y,dayRec(d-DAY)); triCol($('triTd'),dayName(d+DAY),'',t,dayRec(d+DAY));
+    const dy=n-y, dt=t-n, N=capF(nextN);
+    $('triSay1').textContent=$('triSay2').textContent=' ';
+    if(dy===dy) fitText($('triSay1'),triJoin(same(dy)?[...(yr?[]:[`Так же, как ${prevN} в это время`]),`Так же, как ${prevN}`,`Как ${prevN}`]:[`На ${deg(dy)} ${word(dy)}, чем ${prevN}`],same(dy),wxDiff(dayRec(d-DAY),dayRec(d))));
+    if(dt===dt) fitText($('triSay2'),triJoin(same(dt)?[`${N}${still} — так же`,`${N} — так же`]:[`${N}${still} — на ${deg(dt)} ${word(dt)}`,`${N} — на ${deg(dt)} ${word(dt)}`],same(dt),wxDiff(dayRec(d),dayRec(d+DAY))));
   }
-  const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
-  const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
-  { // on a phone the line shares its width with «Вчера» and «Завтра»: the longest wording that fits
-    const a=(isNow?'Сейчас':'Сегодня')+', '+(tq!=null?hm(ms):hh(ms)), b=metric!=='temp'?M().name.toLowerCase():WC[D.code[i]]||'', f=ms>D.now&&!isNow?' · прогноз':'';
-    fitText($('triTop'),[a+f+(b?' · '+b:''),a+(b?' · '+b:''),(isNow?'Сейчас':'Сегодня')+(b?' · '+b:''),a])}
-  bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t); triWx(dayOf(ms));
-  const m=M(), deg=d=>m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit, word=d=>d>0?m.more:m.less, same=d=>Math.abs(d)<m.th[0];
-  const dy=n-y, dt=t-n;
-  triSay(dayOf(ms),same(dy)?['Так же, как вчера в это время','Так же, как вчера','Как вчера']:[`На ${deg(dy)} ${word(dy)}, чем вчера`],
-    same(dt)?['Завтра в это время — так же','Завтра — так же']:[`Завтра в это время — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
-  if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
+  triWx(mode==='days'?['triYd','triTd']:['triYd']);
+  { // the top line shares its width with the headings on the right, so it is set after them: the longest wording that fits
+    const r=REL[relDay(ms)], when=isNow?'Сейчас':r?capF(r):dLabel(ms)+withYear(ms), f=ms>D.now&&!isNow&&!yr?' · прогноз':'', w=what?' · '+what:'';
+    fitText($('triTop'),[when+(time?', '+time:'')+f+w,when+(time?', '+time:'')+w,when+w,when+(time?', '+time:''),when])}
 }
-// yesterday and tomorrow say «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise both only the icons and numbers
-function triWx(d){wxCol($('triNd'),dayRec(d));
-  const both=short=>{wxTab($('triYd'),dayRec(d-DAY),short); wxTab($('triTd'),dayRec(d+DAY),short)}; both(false);
-  if([...document.querySelectorAll('.tcol .wxt')].some(e=>e.scrollWidth>e.clientWidth+1)) both(true)}
-// the two phrases also name rain or snow and wind where they differ from today; the longest wording that fits the line is used
-function triSay(d,b1,b2,s1,s2){const e1=wxDiff(dayRec(d-DAY),dayRec(d)), e2=wxDiff(dayRec(d),dayRec(d+DAY)),
-  // all the changes with the long and then the short wording, then rain or snow alone, then the temperature alone
-  j=(b,s,e)=>{const w=x=>b.map(t=>t+(s?', но ':', ')+x); return [...(e.length?w(e.join(' и ')):[]),...(e.length>1?w(e[0]):[]),...b]};
-  fitText($('triSay1'),j(b1,s1,e1)); fitText($('triSay2'),j(b2,s2,e2))}
-// on today, while comparing, the two lines speak of the other city instead of yesterday and tomorrow here
-function cmpSay(n,t,c,c2,mean){
-  const nm=cmpWant.name; if(!CMP){$('triSay1').textContent='Загружаем погоду: '+nm+'…'; $('triSay2').textContent='\u00a0'; return}
-  const h=c==null?null:byHow(c-n), h2=c2==null?null:byHow(c2-t), here=D.where?inCity(D.where.name):'здесь', v=`${nm} ${M().num(c)+M().unit}${mean}`;
+// under the right-hand numbers «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise all of them only the icons and numbers
+function triWx(ids){const both=short=>ids.forEach(id=>wxTab($(id),$(id)._rec,short)); both(false);
+  if(ids.some(id=>{const e=$(id).querySelector('.wxt'); return e.scrollWidth>e.clientWidth+1})) both(true)}
+// a phrase with the changes in rain or snow and wind: all of them with the long and then the short wording, then rain or snow alone,
+// then the phrase alone
+function triJoin(b,s,e){const w=x=>b.map(t=>t+(s?', но ':', ')+x); return [...(e.length?w(e.join(' и ')):[]),...(e.length>1?w(e[0]):[]),...b]}
+// while comparing, the two lines speak of the other city
+function cmpSay(n,t,c,c2,mean,nextN){
+  const nm=cmpWant.name; if(!CMP){$('triSay1').textContent='Загружаем погоду: '+nm+'…'; $('triSay2').textContent=' '; return}
+  const h=c==null?null:byHow(c-n), h2=c2==null||t!==t?null:byHow(c2-t), here=D.where?inCity(D.where.name):'здесь', v=`${nm} ${M().num(c)+M().unit}${mean}`;
   if(c==null) $('triSay1').textContent=capF(inCity(nm))+' прогноза на это время нет'; else fitText($('triSay1'),h?[`${v}, ${h}, чем ${here}`,`${v}, ${h}`]:[`${v}, как ${here}`,`${v}, так же`]);
-  if(c2==null) $('triSay2').textContent='\u00a0'; else $('triSay2').textContent=h2?`Завтра там ${h2}`:'Завтра там так же'; // the city here is named once, on the line above
+  $('triSay2').textContent=c2==null||t!==t?' ':h2?`${capF(nextN)} там ${h2}`:`${capF(nextN)} там так же`; // the city here is named once, on the line above
 }
+// the compared city's day: its rain or snow and wind, like a day here
+function cmpRec(d){if(!CMP||!CMP.rain) return null; const i0=Math.round((dayOf(d)-CMP.t0)/H), o={r:0,sn:0,w:0,g:0,th:false,n:0};
+  for(let i=Math.max(0,i0);i<Math.min(CMP.n,i0+24);i++){const r=CMP.rain[i]||0, c=CMP.code[i], w=CMP.s.wind[i], g=CMP.s.gust[i]; o.n++; o.r+=r;
+    if(r>0&&isSnow(c,CMP.s.temp[i])) o.sn+=r; if(w>o.w)o.w=w; if(g>o.g)o.g=g; if(c>=95) o.th=true}
+  return o.n>=20?o:null}
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms);
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
