@@ -77,6 +77,15 @@ header.now .trio{opacity:1;visibility:visible}
 .wx{display:flex;align-items:center;gap:4px;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .wx svg{flex:none;width:14px;height:14px}
 .wx.rain{color:var(--rain)}.wx.snow{color:var(--snow)}.wx.strong{color:var(--hot);font-weight:500}
+/* on a wide screen (tablet, desktop) the block stays near the big number, about as far from it as on a phone, instead of going to
+   the far edge. The rain and wind go side by side there, so the block fits beside the number alone and the line under the number
+   («Сейчас, 15:00 · пасмурно») can be as long as it likes without moving the block */
+@media (min-width:560px){
+  .trio{grid-template-areas:"temp pair" "temp pair" "tag tag" "l1 l1" "l2 l2"}
+  .tri-pair{justify-self:start;margin-left:44px;gap:28px}
+  .tri-pair>div{display:grid;grid-template-columns:auto auto;column-gap:12px;justify-items:end}
+  .tri-pair small,.tri-pair b{grid-column:1/-1}
+  .tri-pair b{margin-bottom:0}}
 .tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
@@ -145,6 +154,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .modes i{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--grid-strong)}
 .modes li[aria-checked="true"] i{background:var(--ink);border-color:var(--ink)}
 @keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}}
+.trio .temp{justify-self:start;position:relative}
+/* today's rain or snow and wind as two small icons on the digits' baseline, right under the degree sign */
+.nowx{position:absolute;right:1px;bottom:7px;display:flex;gap:2px;color:var(--muted)}
+.nowx svg{width:12px;height:12px;display:block}.nowx .rain{color:var(--rain)}.nowx .snow{color:var(--snow)}.nowx .strong{color:var(--hot)}
 .temp small,#triN small{font:500 22px/1 var(--f-body);letter-spacing:0;margin-left:6px;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.sugg.modes{animation:none}.mbtn svg{transition:none}}
 .city .lbl{font:400 13px var(--f-body);color:var(--muted)}
@@ -949,7 +962,13 @@ function trio(i,isNow,tq,yr){
     same(dt)?['Завтра в это время — так же','Завтра — так же']:[`Завтра в это время — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
   if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
 }
-function triWx(d){wxCol($('triYd'),dayRec(d-DAY)); wxCol($('triTd'),dayRec(d+DAY))}
+function triWx(d){wxCol($('triYd'),dayRec(d-DAY)); wxCol($('triTd'),dayRec(d+DAY)); nowWx(dayRec(d))}
+function nowWx(d){const x=wxOf(d); if(!x||M().unit) return; // only beside a temperature, where the degree sign leaves room below it
+  const el=document.createElement('span'); el.className='nowx';
+  const p=document.createElement('span'), w=document.createElement('span'); p.innerHTML=svgI(x.k); w.innerHTML=svgI('wind');
+  p.className=x.k==='dry'?'':x.k==='snow'?'snow':'rain'; w.className=x.strong?'strong':'';
+  p.title='Сегодня: '+(x.k==='dry'?'без осадков':WXW[x.k]+', '+mmS(x.r)+' мм'); w.title='Сегодня: '+(x.strong?'сильный ветер, порывы до '+Math.round(x.g):'ветер до '+Math.round(x.w))+' м/с';
+  el.append(p,w); $('triN').append(el)}
 // the two phrases also name rain or snow and wind where they differ from today; the longest wording that fits the line is used
 function triSay(d,b1,b2,s1,s2){const e1=wxDiff(dayRec(d-DAY),dayRec(d)), e2=wxDiff(dayRec(d),dayRec(d+DAY)),
   // all the changes with the long and then the short wording, then rain or snow alone, then the temperature alone
@@ -1014,7 +1033,7 @@ function wxCol(el,d){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelect
 function wxDiff(a,b){const A=wxOf(a), B=wxOf(b); if(!A||!B) return [];
   const out=[], wet=k=>k!=='dry';
   if(wet(B.k)&&B.k!==A.k) out.push(WXW[B.k]); else if(!wet(B.k)&&wet(A.k)) out.push(A.k==='snow'?'без снега':A.k==='mix'?'без осадков':'без дождя');
-  if(metric!=='wind'){ if(B.strong&&!A.strong) out.push('сильный ветер'); else if(B.strong!==A.strong||Math.abs(B.w-A.w)>=3&&Math.max(A.w,B.w)>=5) out.push(B.w>A.w?'ветренее':'тише') }
+  if(metric!=='wind'){ if(B.strong&&!A.strong) out.push('сильный ветер'); else if(A.strong&&!B.strong) out.push('тише'); else if(Math.abs(B.w-A.w)>=3&&Math.max(A.w,B.w)>=5) out.push(B.w>A.w?'ветренее':'тише') }
   return out}
 // the compared city at the same local time (the same day's mean in the year view): its reading, and how it differs from here
 function cmpLine(val,t,yr){
