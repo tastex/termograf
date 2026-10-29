@@ -80,6 +80,13 @@ header.now .trio{opacity:1;visibility:visible}
 .tl{font:500 16px/22px var(--f-body);color:var(--fg)}
 .tn{font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:2px}
 .wxc{display:flex;flex-direction:column;min-width:0;max-width:100%}
+/* yesterday's and tomorrow's rain and wind as a little table: icons under each other, then the word, then the number by its digits, then the unit */
+.wxt{align-self:stretch;display:grid;justify-content:start;grid-template-columns:14px auto auto auto auto;column-gap:4px;align-items:center;margin-top:1px;
+  font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wxt.short{grid-template-columns:14px auto auto auto}
+.wxt .r{display:contents}.wxt svg{width:14px;height:14px;display:block}
+.wxt .n{text-align:right;padding-left:2px}.wxt .f{margin-left:-4px}.wxt .all{grid-column:2/-1}
+.wxt .rain{color:var(--rain)}.wxt .snow{color:var(--snow)}.wxt .strong{color:var(--hot);font-weight:500}
 .wx{display:flex;align-items:center;gap:4px;max-width:100%;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .wx svg{flex:none;width:14px;height:14px}
 .wx span{min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -200,8 +207,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
       <div class="tag" id="triTop">&nbsp;</div>
       <div class="temp" id="triN">—</div>
       <div class="wxc" id="triNd"><span class="wx p"></span><span class="wx w"></span></div>
-      <div class="tcol ty" id="triYd"><small class="tl">Вчера</small><b class="tn" id="triY">—</b><span class="wx p"></span><span class="wx w"></span></div>
-      <div class="tcol tt" id="triTd"><small class="tl">Завтра</small><b class="tn" id="triT">—</b><span class="wx p"></span><span class="wx w"></span></div>
+      <div class="tcol ty" id="triYd"><small class="tl">Вчера</small><b class="tn" id="triY">—</b><div class="wxt"></div></div>
+      <div class="tcol tt" id="triTd"><small class="tl">Завтра</small><b class="tn" id="triT">—</b><div class="wxt"></div></div>
       <div class="tri-say" id="triSay1">&nbsp;</div>
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
@@ -963,10 +970,10 @@ function trio(i,isNow,tq,yr){
     same(dt)?['Завтра в это время — так же','Завтра — так же']:[`Завтра в это время — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
   if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
 }
-// yesterday and tomorrow say «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise both only the numbers next to their icons
+// yesterday and tomorrow say «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise both only the icons and numbers
 function triWx(d){wxCol($('triNd'),dayRec(d));
-  const both=short=>{wxCol($('triYd'),dayRec(d-DAY),short); wxCol($('triTd'),dayRec(d+DAY),short)}; both(false);
-  if([...document.querySelectorAll('#triYd span span,#triTd span span')].some(e=>e.scrollWidth>e.clientWidth+1)) both(true)}
+  const both=short=>{wxTab($('triYd'),dayRec(d-DAY),short); wxTab($('triTd'),dayRec(d+DAY),short)}; both(false);
+  if([...document.querySelectorAll('.tcol .wxt')].some(e=>e.scrollWidth>e.clientWidth+1)) both(true)}
 // the two phrases also name rain or snow and wind where they differ from today; the longest wording that fits the line is used
 function triSay(d,b1,b2,s1,s2){const e1=wxDiff(dayRec(d-DAY),dayRec(d)), e2=wxDiff(dayRec(d),dayRec(d+DAY)),
   // all the changes with the long and then the short wording, then rain or snow alone, then the temperature alone
@@ -1020,6 +1027,14 @@ const WXI={ // 24px icons drawn in the text colour
   wind:'<path d="M3 8.5h10.5a3 3 0 1 0-3-3"/><path d="M3 12.5h15a3 3 0 1 1-3 3"/><path d="M3 16.5h6"/>'};
 const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]}</svg>`;
 const WXW={rain:'дождь',snow:'снег',mix:'дождь со снегом',storm:'гроза'};
+function wxTab(el,d,short){const t=el.querySelector('.wxt'), x=wxOf(d); t.className='wxt'+(short?' short':''); t.textContent='';
+  if(!x){t.innerHTML='&nbsp;'; return}
+  const row=(cls,icon,word,num,unit)=>{const r=document.createElement('div'); r.className='r '+cls; r.innerHTML=svgI(icon);
+    const [i,f]=num.split(','); // whole part to the right, the fraction after it, so the digits stand in columns
+    (short?[]:[[word,'']]).concat([[i,'n'],[f?','+f:'','f'],[unit,'u']]).forEach(([v,cls])=>{const c=document.createElement('span'); c.textContent=v; c.className=cls; r.append(c)}); t.append(r)};
+  if(x.k==='dry'){const r=document.createElement('div'), c=document.createElement('span'); r.className='r'; r.innerHTML=svgI('dry'); c.className='all'; c.textContent='сухо'; r.append(c); t.append(r)}
+  else row(x.k==='snow'?'snow':'rain',x.k,WXW[x.k],mmS(x.r),'мм');
+  row(x.strong?'strong':'','wind',x.strong?'порывы':'ветер',String(Math.round(x.strong?x.g:x.w)),'м/с')}
 function wxCol(el,d,short){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
   if(!x){p.innerHTML=w.innerHTML='&nbsp;'; p.className='wx p'; w.className='wx w'; return}
   p.innerHTML=svgI(x.k)+'<span></span>'; p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
