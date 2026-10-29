@@ -50,11 +50,11 @@ body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
 .brand{flex:none;margin-top:-6px;text-align:center;font:700 11px/12px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--fg)} /* text logo just below the top safe area: real capitals in the bold digits' font and colour (synthesised small caps came out thin and grey) */
 /* header: one fixed grid shared by the usual reading and the today view, so nothing moves when they swap */
-.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 42px 22px 26px 20px;row-gap:3px;column-gap:12px;
-  grid-template-areas:"temp tag" "temp sub" "date date" "l1 l1" "l2 l2"}
+.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 42px 22px 38px 26px 20px;row-gap:3px;column-gap:12px;
+  grid-template-areas:"temp tag" "temp sub" "date date" "wx wx" "l1 l1" "l2 l2"}
 header{position:relative}
 .temp{grid-area:temp;align-self:start;height:64px;font:700 64px/64px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
-.tag,.cond,.tri-pair{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag,.cond{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .when{grid-area:date;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tag{grid-area:tag;align-self:center;font:500 16px/22px var(--f-body);color:var(--ink)}
 .cond{grid-area:sub;align-self:start;font:400 13px/18px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
@@ -67,27 +67,27 @@ header{position:relative}
 header.now .hdr{opacity:0;visibility:hidden}
 .trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .18s ease}
 header.now .trio{opacity:1;visibility:visible}
-/* today: yesterday and tomorrow take the whole right side next to the big number, each with its rain or snow and wind for the day under it */
-.trio{grid-template-areas:"temp pair" "temp pair" "tag pair" "l1 l1" "l2 l2"}
-.trio .tag{justify-self:start;text-align:left;align-self:center}
-.tri-pair{grid-area:pair;align-self:start;display:flex;gap:20px;min-width:0;overflow:visible}
-.tri-pair>div{display:flex;flex-direction:column;align-items:flex-end;min-width:0}
-.tri-pair small{font:400 13px/16px var(--f-body);color:var(--muted)}
-.tri-pair b{font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;margin-bottom:2px}
-.wx{display:flex;align-items:center;gap:4px;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* today, in rows across the whole width: what and when, with «Вчера» and «Завтра» on the same line; the three numbers on one
+   baseline; under each its day's rain or snow and wind. On a phone yesterday and tomorrow keep to the right edge, on a wide screen
+   they stay near the big number */
+.trio{display:grid;grid-template-columns:auto minmax(12px,1fr) fit-content(86px) fit-content(86px);grid-template-rows:22px 67px 38px 26px 20px;row-gap:3px;column-gap:20px}
+.trio>*{min-width:0}
+.trio .tag{grid-row:1;grid-column:1/3;justify-self:stretch;text-align:left;align-self:baseline}
+.tl{grid-row:1;justify-self:end;align-self:baseline;font:400 13px/16px var(--f-body);color:var(--muted)}
+#triN{grid-row:2;grid-column:1;align-self:baseline}
+.tn{grid-row:2;justify-self:end;align-self:baseline;font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ty{grid-column:3}.tt{grid-column:4}
+#triNd{grid-row:3;grid-column:1/3}
+.wxc{display:flex;flex-direction:column;min-width:0;max-width:100%}
+.trio .wxc.ty,.trio .wxc.tt{grid-row:3;align-items:flex-end}
+.wx{display:flex;align-items:center;gap:4px;max-width:100%;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .wx svg{flex:none;width:14px;height:14px}
+.wx span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .wx.rain{color:var(--rain)}.wx.snow{color:var(--snow)}.wx.strong{color:var(--hot);font-weight:500}
-/* on a wide screen (tablet, desktop) the block stays near the big number, about as far from it as on a phone, instead of going to
-   the far edge. The rain and wind go side by side there, so the block fits beside the number alone and the line under the number
-   («Сейчас, 15:00 · пасмурно») can be as long as it likes without moving the block */
-@media (min-width:560px){
-  .trio{grid-template-areas:"temp pair" "temp pair" "tag tag" "l1 l1" "l2 l2"}
-  .tri-pair{justify-self:start;margin-left:44px;gap:28px}
-  .tri-pair>div{display:grid;grid-template-columns:auto auto;column-gap:12px;justify-items:end}
-  .tri-pair small,.tri-pair b{grid-column:1/-1}
-  .tri-pair b{margin-bottom:0}}
+#dayWx{grid-area:wx}
+@media (min-width:560px){.trio{grid-template-columns:auto 16px fit-content(150px) fit-content(150px) minmax(0,1fr)}}
 .tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
+#triSay1{grid-row:4;grid-column:1/-1;line-height:26px}#triSay2{grid-row:5;grid-column:1/-1}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
@@ -154,10 +154,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .modes i{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--grid-strong)}
 .modes li[aria-checked="true"] i{background:var(--ink);border-color:var(--ink)}
 @keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}}
-.trio .temp{justify-self:start;position:relative}
-/* today's rain or snow and wind as two small icons on the digits' baseline, right under the degree sign */
-.nowx{position:absolute;right:1px;bottom:7px;display:flex;gap:2px;color:var(--muted)}
-.nowx svg{width:12px;height:12px;display:block}.nowx .rain{color:var(--rain)}.nowx .snow{color:var(--snow)}.nowx .strong{color:var(--hot)}
 .temp small,#triN small{font:500 22px/1 var(--f-body);letter-spacing:0;margin-left:6px;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.sugg.modes{animation:none}.mbtn svg{transition:none}}
 .city .lbl{font:400 13px var(--f-body);color:var(--muted)}
@@ -197,12 +193,13 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     <div class="when hdr" id="when">Загружаем погоду…</div>
     <div class="tag hdr" id="tag">&nbsp;</div>
     <div class="cond hdr" id="cond">&nbsp;</div>
+    <div class="wxc hdr" id="dayWx"><span class="wx p"></span><span class="wx w"></span></div>
     <div class="delta hdr" id="delta">&nbsp;</div>
     <div class="verdict hdr" id="verdict">&nbsp;</div>
-    <div class="trio hgrid" id="trio" aria-live="polite">
-      <div class="temp" id="triN">—</div>
-      <div class="tag" id="triTop">&nbsp;</div>
-      <div class="tri-pair"><div id="triYd"><small>Вчера</small><b id="triY">—</b><span class="wx p"></span><span class="wx w"></span></div><div id="triTd"><small>Завтра</small><b id="triT">—</b><span class="wx p"></span><span class="wx w"></span></div></div>
+    <div class="trio" id="trio" aria-live="polite">
+      <div class="tag" id="triTop">&nbsp;</div><small class="tl ty">Вчера</small><small class="tl tt">Завтра</small>
+      <div class="temp" id="triN">—</div><b class="tn ty" id="triY">—</b><b class="tn tt" id="triT">—</b>
+      <div class="wxc" id="triNd"><span class="wx p"></span><span class="wx w"></span></div><div class="wxc ty" id="triYd"><span class="wx p"></span><span class="wx w"></span></div><div class="wxc tt" id="triTd"><span class="wx p"></span><span class="wx w"></span></div>
       <div class="tri-say" id="triSay1">&nbsp;</div>
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
@@ -954,7 +951,9 @@ function trio(i,isNow,tq,yr){
   }
   const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
   const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
-  $('triTop').textContent=(isNow?'Сейчас':'Сегодня')+', '+(tq!=null?hm(ms):hh(ms))+(ms>D.now&&!isNow?' · прогноз':'')+(metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:'');
+  { // on a phone the line shares its width with «Вчера» and «Завтра»: the longest wording that fits
+    const a=(isNow?'Сейчас':'Сегодня')+', '+(tq!=null?hm(ms):hh(ms)), b=metric!=='temp'?M().name.toLowerCase():WC[D.code[i]]||'', f=ms>D.now&&!isNow?' · прогноз':'';
+    fitText($('triTop'),[a+f+(b?' · '+b:''),a+(b?' · '+b:''),(isNow?'Сейчас':'Сегодня')+(b?' · '+b:''),a])}
   bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t); triWx(dayOf(ms));
   const m=M(), deg=d=>m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit, word=d=>d>0?m.more:m.less, same=d=>Math.abs(d)<m.th[0];
   const dy=n-y, dt=t-n;
@@ -962,13 +961,10 @@ function trio(i,isNow,tq,yr){
     same(dt)?['Завтра в это время — так же','Завтра — так же']:[`Завтра в это время — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
   if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
 }
-function triWx(d){wxCol($('triYd'),dayRec(d-DAY)); wxCol($('triTd'),dayRec(d+DAY)); nowWx(dayRec(d))}
-function nowWx(d){const x=wxOf(d); if(!x||M().unit) return; // only beside a temperature, where the degree sign leaves room below it
-  const el=document.createElement('span'); el.className='nowx';
-  const p=document.createElement('span'), w=document.createElement('span'); p.innerHTML=svgI(x.k); w.innerHTML=svgI('wind');
-  p.className=x.k==='dry'?'':x.k==='snow'?'snow':'rain'; w.className=x.strong?'strong':'';
-  p.title='Сегодня: '+(x.k==='dry'?'без осадков':WXW[x.k]+', '+mmS(x.r)+' мм'); w.title='Сегодня: '+(x.strong?'сильный ветер, порывы до '+Math.round(x.g):'ветер до '+Math.round(x.w))+' м/с';
-  el.append(p,w); $('triN').append(el)}
+// yesterday and tomorrow say «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise both only the numbers next to their icons
+function triWx(d){wxCol($('triNd'),dayRec(d));
+  const both=short=>{wxCol($('triYd'),dayRec(d-DAY),short); wxCol($('triTd'),dayRec(d+DAY),short)}; both(false);
+  if([...document.querySelectorAll('#triYd span span,#triTd span span')].some(e=>e.scrollWidth>e.clientWidth+1)) both(true)}
 // the two phrases also name rain or snow and wind where they differ from today; the longest wording that fits the line is used
 function triSay(d,b1,b2,s1,s2){const e1=wxDiff(dayRec(d-DAY),dayRec(d)), e2=wxDiff(dayRec(d),dayRec(d+DAY)),
   // all the changes with the long and then the short wording, then rain or snow alone, then the temperature alone
@@ -992,8 +988,7 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
   bigNum($('temp'),val);
   $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
   const tg=rel+(yr?' · средняя за день':metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
-  const rain=rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо';
-  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])} · ${rain}`:`${M().num(rec.lo)}…${fmtV(rec.hi)} · ${rain}`;
+  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])}`:`${M().num(rec.lo)}…${fmtV(rec.hi)}`; wxCol($('dayWx'),rec);
   const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
   if(pin==null&&cmpWant){cmpLine(val,yr?day:tq??ms,yr);return}
   // difference with the pin, or with the current hour (the current day's mean in the year view)
@@ -1023,12 +1018,12 @@ const WXI={ // 24px icons drawn in the text colour
   wind:'<path d="M3 8.5h10.5a3 3 0 1 0-3-3"/><path d="M3 12.5h15a3 3 0 1 1-3 3"/><path d="M3 16.5h6"/>'};
 const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]}</svg>`;
 const WXW={rain:'дождь',snow:'снег',mix:'дождь со снегом',storm:'гроза'};
-function wxCol(el,d){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
-  if(!x){p.innerHTML=w.innerHTML='&nbsp;'; p.className='wx p'; w.className='wx w'; p.title=w.title=''; return}
-  p.innerHTML=svgI(x.k)+'<span></span>'; p.lastChild.textContent=x.k==='dry'?'сухо':mmS(x.r)+' мм'; p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
-  p.title=x.k==='dry'?'Без осадков':capF(WXW[x.k])+', '+mmS(x.r)+' мм за день';
-  w.innerHTML=svgI('wind')+'<span></span>'; w.lastChild.textContent=Math.round(x.strong?x.g:x.w)+' м/с'; w.className='wx w'+(x.strong?' strong':'');
-  w.title=x.strong?'Сильный ветер, порывы до '+Math.round(x.g)+' м/с':'Ветер до '+Math.round(x.w)+' м/с'}
+function wxCol(el,d,short){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
+  if(!x){p.innerHTML=w.innerHTML='&nbsp;'; p.className='wx p'; w.className='wx w'; return}
+  p.innerHTML=svgI(x.k)+'<span></span>'; p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
+  p.lastChild.textContent=x.k==='dry'?'сухо':(short?'':WXW[x.k]+' ')+mmS(x.r)+' мм';
+  w.innerHTML=svgI('wind')+'<span></span>'; w.className='wx w'+(x.strong?' strong':'');
+  w.lastChild.textContent=(short?'':x.strong?'порывы ':'ветер ')+Math.round(x.strong?x.g:x.w)+' м/с'}
 // what changes in rain or snow and wind from day a to day b, said of day b: «дождь», «без снега», «сильный ветер», «тише»
 function wxDiff(a,b){const A=wxOf(a), B=wxOf(b); if(!A||!B) return [];
   const out=[], wet=k=>k!=='dry';
