@@ -67,21 +67,20 @@ header{position:relative}
 header.now .hdr{opacity:0;visibility:hidden}
 .trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .18s ease}
 header.now .trio{opacity:1;visibility:visible}
-.tri-pair{grid-area:sub;align-self:start;display:flex;gap:18px}
-.tri-pair>div{display:flex;flex-direction:column;align-items:flex-end}
+/* today: yesterday and tomorrow take the whole right side next to the big number, each with its rain or snow and wind for the day under it */
+.trio{grid-template-areas:"temp pair" "temp pair" "tag pair" "l1 l1" "l2 l2"}
+.trio .tag{justify-self:start;text-align:left;align-self:center}
+.tri-pair{grid-area:pair;align-self:start;display:flex;gap:20px;min-width:0;overflow:visible}
+.tri-pair>div{display:flex;flex-direction:column;align-items:flex-end;min-width:0}
 .tri-pair small{font:400 13px/16px var(--f-body);color:var(--muted)}
-.tri-pair b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
+.tri-pair b{font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;margin-bottom:2px}
+.wx{display:flex;align-items:center;gap:4px;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wx svg{flex:none;width:14px;height:14px}
+.wx.rain{color:var(--rain)}.wx.snow{color:var(--snow)}.wx.strong{color:var(--hot);font-weight:500}
 .tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
-.days3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:12px;font:400 13px/17px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
-.days3>div{min-width:0;display:flex;flex-direction:column}
-.days3>div>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.days3 small{font:500 13px/17px var(--f-body)}
-.days3>div:nth-child(2) small{color:var(--ink)}
-.days3 .p{color:var(--fg)}.days3 .p.rain{color:var(--rain)}.days3 .p.snow{color:var(--snow)}
-.days3 .w.strong{color:var(--hot);font-weight:500}
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
   touch-action:pan-y;cursor:grab;user-select:none}
 .chartbox:active{cursor:grabbing}
@@ -189,15 +188,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     <div class="verdict hdr" id="verdict">&nbsp;</div>
     <div class="trio hgrid" id="trio" aria-live="polite">
       <div class="temp" id="triN">—</div>
-      <div class="when" id="triWhen">&nbsp;</div>
       <div class="tag" id="triTop">&nbsp;</div>
-      <div class="tri-pair"><div><small>Вчера</small><b id="triY">—</b></div><div><small>Завтра</small><b id="triT">—</b></div></div>
+      <div class="tri-pair"><div id="triYd"><small>Вчера</small><b id="triY">—</b><span class="wx p"></span><span class="wx w"></span></div><div id="triTd"><small>Завтра</small><b id="triT">—</b><span class="wx p"></span><span class="wx w"></span></div></div>
       <div class="tri-say" id="triSay1">&nbsp;</div>
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
   </header>
-  <!-- the day under the cursor and its neighbours: rain or snow and wind for each, so the whole picture compares at a glance -->
-  <div class="days3" id="days3" aria-live="polite"><div><small>&nbsp;</small><span class="p">&nbsp;</span><span class="w">&nbsp;</span></div><div><small>&nbsp;</small><span class="p">&nbsp;</span><span class="w">&nbsp;</span></div><div><small>&nbsp;</small><span class="p">&nbsp;</span><span class="w">&nbsp;</span></div></div>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf</div>
   <div class="chartbox" id="chartbox"><canvas id="chart" aria-label="График температуры по часам; тяните влево и вправо"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><span></span></button></div>
@@ -923,7 +919,7 @@ function render(){
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
-  readout(ci,yr,tq); days3(D.t[ci]); drawOv(C);
+  readout(ci,yr,tq); drawOv(C);
   // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
   const atNow=pin==null&&pull===0&&spd<3&&dayOf(D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
   if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
@@ -936,26 +932,29 @@ const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.
 function trio(i,isNow,tq,yr){
   if(yr){ // year view: daily means of yesterday, today and tomorrow
     const m=ms=>{const r=dayRec(ms);return r?r.sum/r.n:NaN}, d=dayOf(D.now), n=m(d), y=m(d-DAY), t=m(d+DAY);
-    $('triWhen').textContent=dLabel(d); $('triTop').textContent='Сегодня · средняя за день';
-    bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t);
+    $('triTop').textContent='Сегодня · средняя за день';
+    bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t); triWx(d);
     const mt=M(), deg=v=>mt.num(Math.abs(v)).replace(/^[+−]/,'')+mt.unit, word=v=>v>0?mt.more:mt.less, dy=n-y, dt=t-n, same=v=>Math.abs(v)<mt.th[0];
-    $('triSay1').textContent=same(dy)?'Так же, как вчера':`На ${deg(dy)} ${word(dy)}, чем вчера`;
-    $('triSay2').textContent=same(dt)?'Завтра в среднем — так же':`Завтра в среднем — на ${deg(dt)} ${word(dt)}`;
+    triSay(d,same(dy)?['Так же, как вчера','Как вчера']:[`На ${deg(dy)} ${word(dy)}, чем вчера`],same(dt)?['Завтра в среднем — так же','Завтра — так же']:[`Завтра в среднем — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
     if(cmpWant) cmpSay(n,t,cmpDay(d),cmpDay(d+DAY),' в среднем');
     return;
   }
   const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
   const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
-  $('triWhen').textContent=dLabel(ms)+' · '+(tq!=null?hm(ms):hh(ms));
-  $('triTop').textContent=(isNow?'Сейчас':ms>D.now?'Сегодня · прогноз':'Сегодня')+(metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:'');
-  bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t);
+  $('triTop').textContent=(isNow?'Сейчас':'Сегодня')+', '+(tq!=null?hm(ms):hh(ms))+(ms>D.now&&!isNow?' · прогноз':'')+(metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:'');
+  bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t); triWx(dayOf(ms));
   const m=M(), deg=d=>m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit, word=d=>d>0?m.more:m.less, same=d=>Math.abs(d)<m.th[0];
   const dy=n-y, dt=t-n;
-  const p1=same(dy)?'Так же, как вчера в это время':`На ${deg(dy)} ${word(dy)}, чем вчера`;
-  const p2=same(dt)?'Завтра в это время — так же':`Завтра в это время — на ${deg(dt)} ${word(dt)}`;
-  $('triSay1').textContent=p1; $('triSay2').textContent=p2;
+  triSay(dayOf(ms),same(dy)?['Так же, как вчера в это время','Так же, как вчера','Как вчера']:[`На ${deg(dy)} ${word(dy)}, чем вчера`],
+    same(dt)?['Завтра в это время — так же','Завтра — так же']:[`Завтра в это время — на ${deg(dt)} ${word(dt)}`,`Завтра — на ${deg(dt)} ${word(dt)}`],same(dy),same(dt));
   if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
 }
+function triWx(d){wxCol($('triYd'),dayRec(d-DAY)); wxCol($('triTd'),dayRec(d+DAY))}
+// the two phrases also name rain or snow and wind where they differ from today; the longest wording that fits the line is used
+function triSay(d,b1,b2,s1,s2){const e1=wxDiff(dayRec(d-DAY),dayRec(d)), e2=wxDiff(dayRec(d),dayRec(d+DAY)),
+  // all the changes with the long and then the short wording, then rain or snow alone, then the temperature alone
+  j=(b,s,e)=>{const w=x=>b.map(t=>t+(s?', но ':', ')+x); return [...(e.length?w(e.join(' и ')):[]),...(e.length>1?w(e[0]):[]),...b]};
+  fitText($('triSay1'),j(b1,s1,e1)); fitText($('triSay2'),j(b2,s2,e2))}
 // on today, while comparing, the two lines speak of the other city instead of yesterday and tomorrow here
 function cmpSay(n,t,c,c2,mean){
   const nm=cmpWant.name; if(!CMP){$('triSay1').textContent='Загружаем погоду: '+nm+'…'; $('triSay2').textContent='\u00a0'; return}
@@ -990,21 +989,33 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
     const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
   } else el.append(yr?' к средней за сегодня':' к '+(M().cur||'текущей'));
 }
-// the day under the cursor between the day before and the day after: rain or snow over the day, and the wind.
-// The wind turns red once the gusts reach 15 m/s, the strong wind of the weather service's warnings
+// a day's rain or snow and wind, for the columns under yesterday and tomorrow and for the phrases.
+// Strong wind: gusts of 15 m/s, as in the weather service's warnings
 const mmS=v=>v<9.95?String(Math.round(v*10)/10).replace('.',','):String(Math.round(v));
-function precipOf(d){if(d.r<0.05) return ['сухо',''];
-  const s=d.sn/d.r, kind=s>0.7?'снег':s<0.3?(d.th?'гроза':'дождь'):'дождь, снег';
-  return [kind+' '+mmS(d.r)+'\u202fмм',s>0.7?'snow':'rain']}
-let d3Key='';
-function days3(ms){
-  const day=dayOf(ms), key=day+'|'+relDay(day)+'|'+D.dv+'|'+D.fut; if(key===d3Key) return; d3Key=key;
-  [...$('days3').children].forEach((el,j)=>{const k=day+(j-1)*DAY, d=k>=D.fut?null:dayRec(k), rel=REL[relDay(k)], dt=new Date(k);
-    const [lab,p,w]=el.children; lab.textContent=rel?rel[0].toUpperCase()+rel.slice(1):WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()];
-    if(!d||d.n<1){p.textContent='—'; p.className='p'; w.textContent='\u00a0'; w.className='w'; return}
-    const [pt,pc]=precipOf(d); p.textContent=pt; p.className='p'+(pc?' '+pc:'');
-    const strong=d.g>=15; w.textContent=strong?`порывы ${Math.round(d.g)}\u202fм/с`:d.w<0.5?'штиль':`ветер до ${Math.round(d.w)}\u202fм/с`; w.className='w'+(strong?' strong':'')})
-}
+function wxOf(d){if(!d||d.n<1) return null;
+  const s=d.r>=0.1?d.sn/d.r:0, k=d.r<0.1?'dry':s>0.7?'snow':s<0.3?(d.th?'storm':'rain'):'mix';
+  return {k,r:d.r,w:d.w,g:d.g,strong:d.g>=15}}
+const DROP='<path d="M12 3.5c3.4 4.3 5.8 7.3 5.8 10.1a5.8 5.8 0 0 1-11.6 0c0-2.8 2.4-5.8 5.8-10.1z"/>';
+const WXI={ // 24px icons drawn in the text colour
+  dry:DROP+'<path d="M4 20L20 4"/>', rain:DROP,
+  mix:'<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><circle cx="19" cy="20" r="2" fill="currentColor" stroke="none"/>',
+  snow:'<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5L12 7l2.5-2.5M9.5 19.5L12 17l2.5 2.5"/>',
+  storm:'<path d="M13.5 3L6 13.5h5.5L10.5 21 18 10.5h-5.5z"/>',
+  wind:'<path d="M3 8.5h10.5a3 3 0 1 0-3-3"/><path d="M3 12.5h15a3 3 0 1 1-3 3"/><path d="M3 16.5h6"/>'};
+const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]}</svg>`;
+const WXW={rain:'дождь',snow:'снег',mix:'дождь со снегом',storm:'гроза'};
+function wxCol(el,d){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
+  if(!x){p.innerHTML=w.innerHTML='&nbsp;'; p.className='wx p'; w.className='wx w'; p.title=w.title=''; return}
+  p.innerHTML=svgI(x.k)+'<span></span>'; p.lastChild.textContent=x.k==='dry'?'сухо':mmS(x.r)+' мм'; p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
+  p.title=x.k==='dry'?'Без осадков':capF(WXW[x.k])+', '+mmS(x.r)+' мм за день';
+  w.innerHTML=svgI('wind')+'<span></span>'; w.lastChild.textContent=Math.round(x.strong?x.g:x.w)+' м/с'; w.className='wx w'+(x.strong?' strong':'');
+  w.title=x.strong?'Сильный ветер, порывы до '+Math.round(x.g)+' м/с':'Ветер до '+Math.round(x.w)+' м/с'}
+// what changes in rain or snow and wind from day a to day b, said of day b: «дождь», «без снега», «сильный ветер», «тише»
+function wxDiff(a,b){const A=wxOf(a), B=wxOf(b); if(!A||!B) return [];
+  const out=[], wet=k=>k!=='dry';
+  if(wet(B.k)&&B.k!==A.k) out.push(WXW[B.k]); else if(!wet(B.k)&&wet(A.k)) out.push(A.k==='snow'?'без снега':A.k==='mix'?'без осадков':'без дождя');
+  if(metric!=='wind'){ if(B.strong&&!A.strong) out.push('сильный ветер'); else if(B.strong!==A.strong||Math.abs(B.w-A.w)>=3&&Math.max(A.w,B.w)>=5) out.push(B.w>A.w?'ветренее':'тише') }
+  return out}
 // the compared city at the same local time (the same day's mean in the year view): its reading, and how it differs from here
 function cmpLine(val,t,yr){
   const el=$('delta'), vd=$('verdict'), c=cmpVal(t,yr), b=document.createElement('b'); el.textContent=''; vd.className='verdict';
