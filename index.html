@@ -734,7 +734,6 @@ function curveAt(t,start,step,val,n){
   const a=val(k-1), b=val(k+1), m0=a==null||k===0?v:(a+v)/2, m1=b==null||k===n-1?v:(v+b)/2;
   return (1-u)*(1-u)*m0+2*u*(1-u)*v+u*u*m1;
 }
-function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=bg;g.globalAlpha=.88;g.fillRect(x-2,y-8,w+4,15);g.globalAlpha=1;g.fillStyle=fg;g.fillText(txt,x,y)}
 
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
   let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanV*H*1.5,Math.min(D.fut,center+spanV*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
@@ -761,9 +760,17 @@ function fadeOld(from){ // older data that just arrived fades in instead of popp
 }
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
   fillHole(); if(center-Math.max(spanV*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
+// Lines (grid, the curves, the vertical marks) are drawn on a layer of their own; where a label or the sun and moon stand, the
+// layer is cut out before it goes onto the chart. So the labels need no background and nothing crosses them
+const lineC=document.createElement('canvas');
 function render(){
   if(!D) return;
-  const [g,W,Ht]=fit(chart);
+  const [g,W,Ht]=fit(chart), dpr=devicePixelRatio||1;
+  if(lineC.width!==chart.width||lineC.height!==chart.height){lineC.width=chart.width;lineC.height=chart.height}
+  const gl=lineC.getContext('2d'); gl.setTransform(1,0,0,1,0,0); gl.clearRect(0,0,lineC.width,lineC.height); gl.setTransform(dpr,0,0,dpr,0,0);
+  const labs=[], icons=[], dots=[]; // drawn on top at the end
+  const lab=(txt,x,y,fg,font,base='middle')=>{g.font=font; const w=g.measureText(txt).width, r=base==='middle'?{x:x-2,y:y-8,w:w+4,h:16}:{x:x-2,y:y-11,w:w+4,h:15};
+    const o={txt,x,y,fg,font,base,w,r}; labs.push(o); return o};
   const C={};['grid','grid-strong','ink','ink-soft','rain','snow','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
   // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. Both ease in and out
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
@@ -799,14 +806,15 @@ function render(){
     if(r>a)g.fillRect(a,36,r-a,bot-36); if(b>st)g.fillRect(st,36,b-st,bot-36);}
   // sun / moon marks in the middle of each day and night
   {const d=dayOf(D.now),s=D.sun[d],n=D.sun[d+DAY]; if(s){ // only for the current day and the night after it
-    if(X(s[1])-X(s[0])>=20) sunIcon(g,X((s[0]+s[1])/2),48,C.muted);
-    const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) moonIcon(g,X((s[1]+ne)/2),48,C.muted);}}
+    if(X(s[1])-X(s[0])>=20) icons.push({f:sunIcon,x:X((s[0]+s[1])/2),y:48});
+    const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) icons.push({f:moonIcon,x:X((s[1]+ne)/2),y:48});}}
+  icons.forEach(i=>i.r={x:i.x-9,y:i.y-9,w:18,h:18});
   // future
   const xn=X(nowAt), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
   // horizontal grid
-  g.lineWidth=1;
+  gl.lineWidth=1;
   const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
-  for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;g.strokeStyle=v===0?C['grid-strong']:C.grid;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+  for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;gl.strokeStyle=v===0?C['grid-strong']:C.grid;gl.beginPath();gl.moveTo(0,y);gl.lineTo(W,y);gl.stroke()}
   // hour ticks + midnight lines
   const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
@@ -814,7 +822,7 @@ function render(){
     const x=snapPx(X(ms)), mid=new Date(ms).getUTCHours()===0;
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
-    if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
+    if(mid){gl.strokeStyle=C.grid;gl.lineWidth=1;gl.beginPath();gl.moveTo(x,0);gl.lineTo(x,bot);gl.stroke()}
     else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
   }
   // day labels: sticky to the left edge of each visible day, two lines
@@ -851,7 +859,7 @@ function render(){
   for(let i=i0;i<=i1;i++){if(fine&&inQ(D.t[i]))continue;const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillStyle=isSnow(D.code[i],D.s.temp[i])?C.snow:C.rain;g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}}
   g.globalAlpha=1;
   // pinned reference line
-  if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
+  if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;gl.strokeStyle=C.pin;gl.lineWidth=1;gl.setLineDash([3,4]);gl.beginPath();gl.moveTo(0,py);gl.lineTo(W,py);gl.stroke();gl.setLineDash([])}
   // temperature trace
   // the line breaks where a year is not loaded yet (no days there, NaN hours) and where a new week springs in
   const segs=[]; let seg=null, segW=0; const add=(p,w=0)=>{if(p[1]!==p[1]){seg=null;return} if(!seg||segW!==w){segs.push(seg=[]);segW=w} seg.push(p)};
@@ -864,29 +872,26 @@ function render(){
     for(let i=i0;i<=i1;i++){const t=D.t[i];
       if(fine&&inQ(t)){ if(!qDone){qDone=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) add([X(q.t0+k*Q),Y(q.temp[k])])} continue }
       add([X(t),Y(D.temp[i])],warp&&t>=warp.from?1:0)}}
-  const path=pts=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
+  const path=(pts,c=g)=>{c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;c.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];c.lineTo(L[0],L[1])};
   segs.forEach(pts=>{ if(pts.length<2) return;
     if(!yr){path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill()}
-    g.save();g.beginPath();g.rect(0,0,Math.max(0,xn),Ht);g.clip();path(pts);g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore();
-    if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
+    gl.save();gl.beginPath();gl.rect(0,0,Math.max(0,xn),Ht);gl.clip();path(pts,gl);gl.strokeStyle=C.ink;gl.lineWidth=2.2;gl.lineJoin='round';gl.stroke();gl.restore();
+    if(xn<W){gl.save();gl.beginPath();gl.rect(Math.max(0,xn),0,W,Ht);gl.clip();path(pts,gl);gl.globalAlpha=.45;gl.strokeStyle=C.ink;gl.lineWidth=2.2;gl.lineJoin='round';gl.stroke();gl.restore()}
   });
   // the compared city: a second solid line in its own colour
-  let cityTags=[];
+  let cityTags=[], cmpPts=[];
   if(CMP){const cs=[]; let cur=null; const put=(x,v)=>{if(v==null){cur=null;return} if(!cur) cs.push(cur=[]); cur.push([x,Y(v)])};
     if(yr) for(let d=dayOf(t0)-DAY;d<=t1+DAY&&d<D.fut;d+=DAY) put(X(d+12*H),cmpDay(d));
     else for(let t=Math.floor(t0/H)*H-H;t<=t1+H&&t<D.fut;t+=H) put(X(t),cmpAt(t));
-    const xc=Math.max(0,xn), cl=(a,b,al)=>{g.save();g.beginPath();g.rect(a,0,b-a,Ht);g.clip();g.globalAlpha=al;g.strokeStyle=C.cmp;g.lineJoin='round';g.lineWidth=pph>=3?2:1.5;
-      cs.forEach(pts=>{if(pts.length>1){path(pts);g.stroke()}});g.restore()};
-    cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
+    const xc=Math.max(0,xn), cl=(a,b,al)=>{gl.save();gl.beginPath();gl.rect(a,0,b-a,Ht);gl.clip();gl.globalAlpha=al;gl.strokeStyle=C.cmp;gl.lineJoin='round';gl.lineWidth=pph>=3?2:1.5;
+      cs.forEach(pts=>{if(pts.length>1){path(pts,gl);gl.stroke()}});gl.restore()};
+    cmpPts=cs; cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
     // both cities are named at the right end of their lines; where exactly is settled with the extremes' labels below
     const end=ss=>{let lp=null; ss.forEach(pts=>pts.forEach(p=>{if(p[0]<=W-6&&(!lp||p[0]>lp[0]))lp=p})); return lp&&lp[0]>W*.4?lp:null};
     g.font='600 11px '+MONO;g.textBaseline='middle';
     const tags=[[end(cs),CMP.where.name,C.cmp],[D.where?end(segs):null,D.where?.name,C.ink]].filter(t=>t[0]).map(([lp,nm,c])=>{const w=g.measureText(nm).width, by=lp[0]+w+10<=W;
       return {x:by?lp[0]+6:W-w-4, y:by?lp[1]:lp[1]-14, w, nm, c}});
     cityTags=tags}
-  // y labels
-  g.textBaseline='middle';g.font='500 11px '+MONO;
-  for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
   // extremes: per day when there is room, otherwise for the whole visible window. They are looked for in the readings
   // the line is drawn through (every 15 minutes where those are shown), and the dots sit on the smoothed line itself
   const sm=[]; {let qd=!fine||!D.q; for(let i=i0;i<=i1;i++){const t=D.t[i];
@@ -895,10 +900,20 @@ function render(){
   const ext=[], pick=(a,b)=>{let mx=null,mn=null; for(const p of sm){if(p[0]<a||p[0]>=b)continue; if(!mx||p[1]>mx[1])mx=p; if(!mn||p[1]<mn[1])mn=p}
     if(mx){if(X(mx[0])>=0&&X(mx[0])<=W)ext.push([mx,1]); if(X(mn[0])>=0&&X(mn[0])<=W)ext.push([mn,-1])}};
   if(dayW>=40){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
-  g.font='600 11px '+MONO;g.textBaseline='middle';
+  const EF='600 11px '+MONO; g.font=EF;
   const onLine=t=>yr?null:fine&&inQ(t)?curveAt(t,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
+  const meets=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
   const exL=ext.map(([[t,v],s])=>{const x=X(t),y=Y(onLine(t)??v),c=s>0?C.hot:C.cold,txt=fmtS(v),w=g.measureText(txt).width;
-    return {x,y,c,txt,tx:Math.min(W-w-3,Math.max(3,x-w/2)),ty:s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13),w}});
+    let tx=Math.min(W-w-3,Math.max(3,x-w/2)); let ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
+    // a high number never covers the sun or the moon: it steps aside, still above its dot
+    for(const i of icons){const r={x:tx-2,y:ty-8,w:w+4,h:16}; if(!meets(r,i.r)) continue;
+      const l=i.r.x-w-3, rr=i.r.x+i.r.w+3; tx=(Math.abs(l-tx)<=Math.abs(rr-tx)&&l>=3)||rr+w>W-3?l:rr}
+    return {x,y,c,txt,tx,ty,w,s}});
+  { // two numbers that would touch: the second moves one line further from its dot, or keeps only its dot
+    const box=e=>({x:e.tx-3,y:e.ty-8,w:e.w+6,h:16}), done=[];
+    exL.slice().sort((a,b)=>a.tx-b.tx).forEach(e=>{
+      if(done.some(d=>meets(box(e),box(d)))){const ty=e.ty+(e.s>0?-14:14); if(ty>=top-2&&ty<=bot-8&&!done.some(d=>meets(box({...e,ty}),box(d)))) e.ty=ty; else {e.txt=null; return}}
+      done.push(e)})}
   // the city names step up or down off the extremes' labels and each other; with no free place left, the extreme's number gives way (its dot stays)
   const hit=(a,b)=>a.x<b.x+b.w+6&&b.x<a.x+a.w+6&&Math.abs(a.y-b.y)<15, placed=[];
   cityTags.forEach(t=>{const y0=t.y; let ok=false;
@@ -906,15 +921,27 @@ function render(){
       if(!placed.some(p=>hit(t,p))&&!exL.some(e=>hit(t,{x:e.tx,y:e.ty,w:e.w}))){ok=true;break}}
     if(!ok){t.y=Math.max(top,Math.min(bot-10,y0)); exL.forEach(e=>{if(hit(t,{x:e.tx,y:e.ty,w:e.w})) e.txt=null})}
     placed.push(t)});
-  exL.forEach(e=>{g.beginPath();g.arc(e.x,e.y,3,0,7);g.fillStyle=e.c;g.fill(); if(e.txt) tagText(g,e.txt,e.tx,e.ty,e.c,C.paper)});
-  g.font='600 11px '+MONO; placed.forEach(t=>tagText(g,t.nm,t.x,t.y,t.c,C.paper));
-  // now marker
-  if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(snapPx(xn),top-8);g.lineTo(snapPx(xn),bot);g.stroke();g.setLineDash([]);
-    g.textBaseline='alphabetic';g.font='500 11px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
+  exL.forEach(e=>{dots.push(e); if(e.txt) lab(e.txt,e.tx,e.ty,e.c,EF)});
+  placed.forEach(t=>lab(t.nm,t.x,t.y,t.c,EF));
+  // now marker: the word to the right of the line, or to the left of it at the right edge
+  if(xn>=0&&xn<=W){gl.strokeStyle=C.fg;gl.lineWidth=1;gl.setLineDash([2,3]);gl.beginPath();gl.moveTo(snapPx(xn),top-8);gl.lineTo(snapPx(xn),bot);gl.stroke();gl.setLineDash([]);
+    const NF='500 11px '+MONO; g.font=NF; const w=g.measureText('сейчас').width; lab('сейчас',xn+5+w<=W-2?xn+5:xn-5-w,bot-6,C.fg,NF,'alphabetic')}
+  // y labels: on their grid line at the left edge; one that the curve or another label would cross is left out
+  {const YF='500 11px '+MONO; g.font=YF; const pts=[].concat(...segs,...cmpPts);
+    for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v); if(y<top-2) continue; const txt=fmtS(v), w=g.measureText(txt).width, r={x:0,y:y-8,w:w+4,h:16};
+      if(labs.some(l=>meets(r,l.r))||pts.some(p=>p[0]>=-4&&p[0]<=w+10&&Math.abs(p[1]-y)<9)) continue; lab(txt,2,y,C.muted,YF)}}
   // pin marker
   if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
-    if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
-      g.beginPath();g.moveTo(px,py-12);g.lineTo(px+5,py-5);g.lineTo(px,py+2);g.lineTo(px-5,py-5);g.closePath();g.fillStyle=C.pin;g.fill()}}
+    if(px>=-6&&px<=W+6){gl.strokeStyle=C.pin;gl.lineWidth=1.5;gl.beginPath();gl.moveTo(Math.round(px)+.5,top-8);gl.lineTo(Math.round(px)+.5,bot);gl.stroke();
+      gl.beginPath();gl.moveTo(px,py-12);gl.lineTo(px+5,py-5);gl.lineTo(px,py+2);gl.lineTo(px-5,py-5);gl.closePath();gl.fillStyle=C.pin;gl.fill()}}
+  // the lines go on the chart with holes where the labels and the sun and moon stand; then those on top
+  const holes=labs.map(l=>l.r).concat(icons.map(i=>i.r));
+  gl.save(); gl.setTransform(dpr,0,0,dpr,0,0); holes.forEach(r=>gl.clearRect(r.x,r.y,r.w,r.h)); gl.restore();
+  g.save(); g.setTransform(1,0,0,1,0,0); g.drawImage(lineC,0,0); g.restore();
+  icons.forEach(i=>i.f(g,i.x,i.y,C.muted));
+  dots.forEach(e=>{g.beginPath();g.arc(e.x,e.y,3,0,7);g.fillStyle=e.c;g.fill()});
+  labs.forEach(l=>{g.font=l.font;g.textBaseline=l.base;g.fillStyle=l.fg;g.fillText(l.txt,l.x,l.y)});
+  g.textBaseline='middle';
   if(fade){const xr=Math.min(W,X(fade.from)); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
   const paused=!busy&&D.err&&Date.now()<D.wait; // the archive waits out a limit or a lost connection
   // years not loaded yet in view: what is happening to them
@@ -944,7 +971,9 @@ function render(){
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
   const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
-  g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, on the same pixel grid as the hour ticks
+  { // the cursor too passes behind the labels: its line is broken where one stands
+    const cut=holes.filter(r=>r.x<=cx&&cx<=r.x+r.w).sort((a,b)=>a.y-b.y); let y=top-8; g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();
+    for(const r of cut){if(r.y>y){g.moveTo(cx,y);g.lineTo(cx,Math.min(r.y,bot))} y=Math.max(y,r.y+r.h)} if(y<bot){g.moveTo(cx,y);g.lineTo(cx,bot)} g.stroke()} // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
   const tq=!yr&&fine&&inQ(vc)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in
