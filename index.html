@@ -56,12 +56,12 @@ header{position:relative}
 .temp{grid-area:temp;align-self:start;height:64px;font:700 64px/64px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
 .tag,.cond{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .when{grid-area:date;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tag{grid-area:tag;align-self:center;font:500 16px/22px var(--f-body);color:var(--ink)}
+.tag{grid-area:tag;align-self:center;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums;color:var(--ink)} /* digits of one width: the time and dates beside it don't twitch while dragging */
 .cond{grid-area:sub;align-self:start;font:400 13px/18px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
 .delta{grid-area:l1;display:flex;align-items:center;gap:8px;font:400 13px/26px var(--f-body);color:var(--muted);white-space:nowrap;min-width:0}
 .delta b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
 .delta button{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:24px;height:24px;display:grid;place-items:center;font:500 16px/1 var(--f-body);color:var(--pin);background:transparent;border:1px solid var(--pin);border-radius:50%;padding:0;cursor:pointer}
-.verdict{grid-area:l2;font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.verdict{grid-area:l2;font:500 16px/20px var(--f-body);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .verdict.warm{color:var(--hot)}.verdict.cool{color:var(--cold)}
 .hdr{transition:opacity .18s ease}
 header.now .hdr{opacity:0;visibility:hidden}
@@ -79,7 +79,7 @@ header.now .trio{opacity:1;visibility:visible}
 .tcol{grid-row:1/4;align-self:end;margin-bottom:3.5px;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
 .ty{grid-column:3;position:relative;left:12px}.tt{grid-column:4} /* the day before stands closer to the day after: one pair */
 .trio.one .ty{left:0}
-.tl{display:flex;align-items:center;gap:6px;max-width:100%;font:500 16px/17px var(--f-body);color:var(--fg);white-space:nowrap}
+.tl{display:flex;align-items:center;gap:6px;max-width:100%;font:500 16px/17px var(--f-body);font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
 .tl span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .tl.pin{color:var(--pin)}.tl.cmp{color:var(--cmp)}
 .tl .x{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:17px;height:17px;display:grid;place-items:center;font:500 14px/1 var(--f-body);color:inherit;background:transparent;border:1px solid currentColor;border-radius:50%;padding:0;cursor:pointer}
@@ -101,7 +101,7 @@ header.now .trio{opacity:1;visibility:visible}
 .wx.rain{color:var(--rain)}.wx.snow{color:var(--snow)}.wx.strong{color:var(--hot);font-weight:500}
 #dayWx{grid-area:wx;flex-direction:row;gap:14px}
 @media (min-width:560px){.trio{grid-template-columns:var(--nw,auto) 16px 128px 128px minmax(0,1fr)}.ty{left:8px}}
-.tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tri-say{font:500 16px/20px var(--f-body);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #triSay1{grid-row:4;grid-column:1/-1;line-height:26px;align-self:end}#triSay2{grid-row:5;grid-column:1/-1}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
