@@ -44,7 +44,7 @@
   --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6; --snow:#c4c0f0;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
 html,body{height:100%}
-html{box-sizing:border-box} /* the safe-area padding on the root stays inside the screen height (home-screen app on iPhone) */
+html{box-sizing:border-box;-webkit-text-size-adjust:100%;text-size-adjust:100%} /* iPhone in landscape doesn't enlarge some of the text on its own */ /* the safe-area padding on the root stays inside the screen height (home-screen app on iPhone) */
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
@@ -67,38 +67,39 @@ header{position:relative}
 header.now .hdr{opacity:0;visibility:hidden}
 .trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .18s ease}
 header.now .trio{opacity:1;visibility:visible}
-/* today: on the left what and when, the big number, and today's rain or snow and wind in one line under it; on the right yesterday
-   and tomorrow from the top down, their headings on the same line as the left one, then the number, the rain and the wind.
-   On a phone they keep to the right edge, on a wide screen they stay near the big number */
-.trio{display:grid;grid-template-columns:auto minmax(12px,1fr) fit-content(86px) fit-content(86px);grid-template-rows:22px 64px 20px 29px 20px;row-gap:3px;column-gap:20px}
+/* today: on the top line what and when, across the whole width; the big number, and today's rain or snow and wind in one line under it;
+   on the right the day before and the day after: heading, number, rain and wind, standing on the line of today's icons.
+   Their columns have a fixed width, so they never move while the chart is dragged: on a phone at the right edge,
+   on a wide screen near the big number, its column as wide as the widest number the mode can show (--nw) */
+.trio{display:grid;grid-template-columns:auto minmax(12px,1fr) 86px 86px;grid-template-rows:22px 64px 20px 29px 20px;row-gap:3px;column-gap:20px}
 .trio>*{min-width:0}
-.trio .tag{grid-row:1;grid-column:1/3;justify-self:stretch;text-align:left;width:0;min-width:100%} /* takes the room it is given, never widens the columns */
+.trio .tag{grid-row:1;grid-column:1/-1;justify-self:stretch;text-align:left;width:0;min-width:100%} /* takes the room it is given, never widens the columns */
 #triN{grid-row:2;grid-column:1}
 #triNd{grid-row:3;grid-column:1/3;flex-direction:row;gap:14px;margin-top:-4px}
-.tcol{grid-row:1/4;align-self:start;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
+.tcol{grid-row:1/4;align-self:end;margin-bottom:3.5px;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
 .ty{grid-column:3}.tt{grid-column:4}
-.tl{display:flex;align-items:center;gap:6px;max-width:100%;font:500 16px/22px var(--f-body);color:var(--fg);white-space:nowrap}
+.tl{display:flex;align-items:center;gap:6px;max-width:100%;font:500 16px/17px var(--f-body);color:var(--fg);white-space:nowrap}
 .tl span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .tl.pin{color:var(--pin)}.tl.cmp{color:var(--cmp)}
-.tl .x{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:20px;height:20px;display:grid;place-items:center;font:500 14px/1 var(--f-body);color:inherit;background:transparent;border:1px solid currentColor;border-radius:50%;padding:0;cursor:pointer}
+.tl .x{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:17px;height:17px;display:grid;place-items:center;font:500 14px/1 var(--f-body);color:inherit;background:transparent;border:1px solid currentColor;border-radius:50%;padding:0;cursor:pointer}
 .tl .x[hidden]{display:none}
 /* the pin or the compared city: one column on the right, as wide as the two */
 .trio.one .tt{display:none}.trio.one .ty{grid-column:3/5}
 .tn{font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:-1px}
 .wxc{display:flex;flex-direction:column;min-width:0;max-width:100%}
 /* yesterday's and tomorrow's rain and wind as a little table: icons under each other, then the word, then the number by its digits, then the unit */
-.wxt{align-self:stretch;display:grid;justify-content:start;grid-template-columns:14px auto auto auto auto;column-gap:3px;align-items:center;margin-top:-1px;
+.wxt{align-self:stretch;display:grid;justify-content:end;grid-template-columns:18px auto auto auto auto;column-gap:0;align-items:center;margin-top:-1px;
   font:400 13px/17px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.wxt.short{grid-template-columns:14px auto auto auto}
+.wxt.short{grid-template-columns:18px auto auto auto}
 .wxt .r{display:contents}.wxt svg{width:14px;height:14px;display:block}
-.wxt .n{text-align:right;padding-left:2px}.wxt .f{margin-left:-4px}.wxt .all{grid-column:2/-1}
+.wxt .w{padding-right:4px}.wxt .n{text-align:right}.wxt .u{padding-left:4px}.wxt .all{grid-column:2/-1}
 .wxt .rain{color:var(--rain)}.wxt .snow{color:var(--snow)}.wxt .strong{color:var(--hot);font-weight:500}
 .wx{display:flex;align-items:center;gap:4px;max-width:100%;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .wx svg{flex:none;width:14px;height:14px}
 .wx span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .wx.rain{color:var(--rain)}.wx.snow{color:var(--snow)}.wx.strong{color:var(--hot);font-weight:500}
 #dayWx{grid-area:wx;flex-direction:row;gap:14px}
-@media (min-width:560px){.trio{grid-template-columns:auto 16px fit-content(150px) fit-content(150px) minmax(0,1fr)}}
+@media (min-width:560px){.trio{grid-template-columns:var(--nw,auto) 16px 128px 128px minmax(0,1fr)}}
 .tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #triSay1{grid-row:4;grid-column:1/-1;line-height:26px;align-self:end}#triSay2{grid-row:5;grid-column:1/-1}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
@@ -965,15 +966,22 @@ const dayName=k=>{const r=relName(k), dt=new Date(k); return r?capF(r):WD[dt.get
 function triCol(el,label,cls,val,rec,onX){const l=el.querySelector('.tl'), x=l.querySelector('button');
   l.className='tl'+(cls?' '+cls:''); l.firstChild.textContent=label; x.hidden=!onX; x.onclick=onX; if(onX) x.setAttribute('aria-label',cls==='pin'?'Снять метку':'Убрать сравнение');
   el.querySelector('.tn').textContent=val==null||val!==val?'—':fmtS(val); el._rec=rec}
+// on a wide screen the big number's column is as wide as the widest number of the mode, so yesterday and tomorrow stay put
+// whatever the number under the cursor
+const NW_S={temp:[-38,38],feel:[-48,48],wind:[8.8,48],pres:[788],hum:[100],cloud:[100]}; let nwKey='';
+function numCol(){const k=metric+'|'+(document.fonts&&document.fonts.status); if(k===nwKey) return; nwKey=k;
+  const e=document.createElement('div'); e.className='temp'; e.style.cssText='position:absolute;visibility:hidden;left:0;top:0';
+  $('trio').append(e); let w=0; for(const v of NW_S[metric]){bigNum(e,v); w=Math.max(w,e.getBoundingClientRect().width)} e.remove();
+  $('trio').style.setProperty('--nw',Math.ceil(w)+'px')}
 function trio(i,isNow,tq,yr){
   const ms=yr?dayOf(D.t[i]):tq??D.t[i], d=dayOf(ms), mode=pin!=null?'pin':cmpWant?'cmp':'days';
   const key=[ms,isNow,yr,metric,mode,pin,!!CMP,cmpWant&&cmpWant.name,D.dv,D.now,D.q&&D.q.t0,innerWidth,document.fonts&&document.fonts.status].join('|'); if(key===triKey) return; triKey=key;
   const mean=r=>r&&r.n?r.sum/r.n:NaN, qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
   const at=t=>yr?mean(dayRec(t)):t<D.t[0]||t>D.t[D.t.length-1]?NaN:tq!=null?qv(t):D.temp[idxAt(t)];
   const n=at(ms), m=M(), time=yr?'':tq!=null?hm(ms):hh(ms), what=yr?'средняя за день':metric!=='temp'?m.name.toLowerCase():WC[D.code[i]]||'';
-  bigNum($('triN'),n); wxCol($('triNd'),dayRec(d));
+  numCol(); bigNum($('triN'),n); wxCol($('triNd'),dayRec(d));
   const deg=v=>m.num(Math.abs(v)).replace(/^[+−]/,'')+m.unit, word=v=>v>0?m.more:m.less, same=v=>Math.abs(v)<m.th[0];
-  const prevN=relName(d-DAY)||'накануне', nextN=relName(d+DAY)||'назавтра', still=yr?' в среднем':' в это время';
+  const prevN=relName(d-DAY)||'день назад', nextN=relName(d+DAY)||'на следующий день', still=yr?' в среднем':' в это время';
   $('trio').classList.toggle('one',mode!=='days');
   if(mode==='pin'){ // the pin's reading next to this one
     const pv=yr?mean(dayRec(pin)):D.temp[idxAt(pin)], pr=REL[relDay(pin)], pd=new Date(pin);
@@ -997,11 +1005,12 @@ function trio(i,isNow,tq,yr){
   triWx(mode==='days'?['triYd','triTd']:['triYd']);
   { // the top line shares its width with the headings on the right, so it is set after them: the longest wording that fits
     const r=REL[relDay(ms)], when=isNow?'Сейчас':r?capF(r):dLabel(ms)+withYear(ms), f=ms>D.now&&!isNow&&!yr?' · прогноз':'', w=what?' · '+what:'';
-    fitText($('triTop'),[when+(time?', '+time:'')+f+w,when+(time?', '+time:'')+w,when+w,when+(time?', '+time:''),when])}
+    const T=when+(time?', '+time:''); fitText($('triTop'),[T+f+w,T+w,T+f,T])} // the time always stays, the words give way first
 }
 // under the right-hand numbers «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise all of them only the icons and numbers
 function triWx(ids){const both=short=>ids.forEach(id=>wxTab($(id),$(id)._rec,short)); both(false);
-  if(ids.some(id=>{const e=$(id).querySelector('.wxt'); return e.scrollWidth>e.clientWidth+1})) both(true)}
+  // the table keeps to the right edge, so it overflows to the left, where scrollWidth doesn't see it
+  if(ids.some(id=>{const e=$(id).querySelector('.wxt'), l=e.getBoundingClientRect().left; return [...e.querySelectorAll('svg,span')].some(c=>c.getBoundingClientRect().left<l-.5)})) both(true)}
 // a phrase with the changes in rain or snow and wind: all of them with the long and then the short wording, then rain or snow alone,
 // then the phrase alone
 function triJoin(b,s,e){const w=x=>b.map(t=>t+(s?', но ':', ')+x); return [...(e.length?w(e.join(' и ')):[]),...(e.length>1?w(e[0]):[]),...b]}
@@ -1062,7 +1071,7 @@ function wxTab(el,d,short){const t=el.querySelector('.wxt'), x=wxOf(d); t.classN
   if(!x){t.innerHTML='&nbsp;'; return}
   const row=(cls,icon,word,num,unit)=>{const r=document.createElement('div'); r.className='r '+cls; r.innerHTML=svgI(icon);
     const [i,f]=num.split(','); // whole part to the right, the fraction after it, so the digits stand in columns
-    (short?[]:[[word,'']]).concat([[i,'n'],[f?','+f:'','f'],[unit,'u']]).forEach(([v,cls])=>{const c=document.createElement('span'); c.textContent=v; c.className=cls; r.append(c)}); t.append(r)};
+    (short?[]:[[word,'w']]).concat([[i,'n'],[f?','+f:'','f'],[unit,'u']]).forEach(([v,cls])=>{const c=document.createElement('span'); c.textContent=v; c.className=cls; r.append(c)}); t.append(r)};
   if(x.k==='dry'){const r=document.createElement('div'), c=document.createElement('span'); r.className='r'; r.innerHTML=svgI('dry'); c.className='all'; c.textContent='сухо'; r.append(c); t.append(r)}
   else row(x.k==='snow'?'snow':'rain',x.k,WXW[x.k],mmS(x.r),'мм');
   row(x.strong?'strong':'','wind',x.strong?'порывы':'ветер',String(Math.round(x.strong?x.g:x.w)),'м/с')}
