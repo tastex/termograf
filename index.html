@@ -775,12 +775,13 @@ function render(){
   const lab=(txt,x,y,fg,font,base='middle')=>{g.font=font; const w=g.measureText(txt).width, r=base==='middle'?{x:x-2,y:y-8,w:w+4,h:16}:{x:x-2,y:y-11,w:w+4,h:15};
     const o={txt,x,y,fg,font,base,w,r}; labs.push(o); return o};
   const C={};['grid','grid-strong','ink','ink-soft','rain','snow','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
-  // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. Both ease in and out
+  // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. The scale runs at
+  // the target at once and settles softly (exponential ease-out), so the zoom reads as a quick, decided move
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
   if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
   if(spd>6){fzOn=false;slowMs=0}
-  if(fzOn&&fz<1){fz=Math.min(1,fz+dtF/600);draw()} else if(!fzOn&&fz>0){fz=Math.max(0,fz-dtF/420);draw()}
-  const fe=fz*fz*(3-2*fz); spanV=Math.exp(Math.log(spanH)+(Math.log(Math.min(spanH,12))-Math.log(spanH))*fe);
+  {const tg=fzOn?1:0; if(fz!==tg){fz+=(tg-fz)*(1-Math.exp(-Math.min(dtF,40)/(fzOn?90:110))); if(Math.abs(tg-fz)<.003) fz=tg; draw()}}
+  spanV=Math.exp(Math.log(spanH)+(Math.log(Math.min(spanH,12))-Math.log(spanH))*fz);
   const pph=W/spanV, fine=pph>=8&&!!D.q;
   // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
   // so the cursor sits exactly on a reading; swiped fast, the chart runs smoothly and the dot glides along the curve
@@ -793,8 +794,8 @@ function render(){
   if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3?0.6:0.35);
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
-  // while a new week springs in, everything after warp.from is stretched to the right and relaxes back
-  // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right
+  // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right,
+  // and the shift only shrinks, so the new week never runs over the days before it
   const Xb=ms=>(ms-t0)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
   const X=ms=>Xb(ms)+(warp&&ms>=warp.from?wShift:0), Y=v=>top+(yMax-v)/(yMax-yMin)*(bot-top);
   geom={t0,pph,X};
@@ -828,7 +829,7 @@ function render(){
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
     if(mid){gl.strokeStyle=C.grid;gl.lineWidth=1;gl.beginPath();gl.moveTo(x,0);gl.lineTo(x,bot);gl.stroke()}
-    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
+    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
   }
   // day labels: sticky to the left edge of each visible day, two lines
   for(let d=d0;d<=t1;d+=DAY){
@@ -1243,7 +1244,7 @@ window.addEventListener('pointerup',e=>{unptr(e);if(!drag)return;const d=drag;dr
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches)coast();
 });
 window.addEventListener('pointercancel',e=>{unptr(e);if(drag){drag=null;if(pull!==0)release()}});
-function release(){ // reveal next week if pulled far enough; the pull springs back and the new week slides in
+function release(){ // reveal next week if pulled far enough; the pull eases back and the new week slides into place
   const W=box.clientWidth, end=D.t[D.t.length-1]+H, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(pull<0) extendBack();
   if(pull>=W*0.15&&D.fut<end&&!D.partial){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
@@ -1251,7 +1252,7 @@ function release(){ // reveal next week if pulled far enough; the pull springs b
   const step=now=>{const ms=now-t0;
     const kp=reduce?1:Math.min(1,ms/240); pull=p0*Math.pow(1-kp,3);
     let done=kp>=1;
-    if(warp){const kw=Math.min(1,ms/460), q=kw-1; warp.e=1+2.3*q*q*q+1.3*q*q; if(kw>=1) warp=null; else done=false}
+    if(warp){const kw=Math.min(1,ms/520); warp.e=1-Math.pow(1-kw,4); if(kw>=1) warp=null; else done=false} // ease-out, no overshoot
     draw(); if(!done) raf=requestAnimationFrame(step)};
   raf=requestAnimationFrame(step);
 }
