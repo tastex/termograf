@@ -268,7 +268,7 @@ const MONO='"Golos Text",system-ui,sans-serif'; // chart labels use the text fac
 let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
 const Q=H/4; // quarter hour
 let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
-let warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
+let stepTw=null, warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
 // the moment and the scale on screen, shared by the three pages, so switching between them keeps both:
@@ -790,10 +790,13 @@ function render(){
     const h=D.t[idxAt(t)]; return nq!=null&&Math.abs(t-nq)<=Math.abs(t-h)?nq:h};
   snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
-  // dragged slowly, the chart steps reading by reading; zoomed in (15-minute steps) each step is a short quick glide, so the
-  // hour ticks and labels don't visibly creep up to the cursor, yet the chart never seems to freeze and jump
+  // dragged slowly, the chart steps reading by reading. Zoomed in, where a step is long, each step is its own quick tween
+  // (ease-out, fixed 150 ms): the hour ticks snap to the cursor like a magnet, without a slow creeping tail and without a jump
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3||drag&&fine?0.6:0.35);
+  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4){vc=want;stepTw=null}
+  else if(fine&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={from:vc,to:want,t:nowT};
+    const k=Math.min(1,(nowT-stepTw.t)/150); vc=k>=1?want:stepTw.from+(want-stepTw.from)*(1-Math.pow(1-k,3))}
+  else {stepTw=null; vc+=(want-vc)*(spd>3?0.6:0.35)}
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right,
