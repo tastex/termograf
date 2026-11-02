@@ -469,7 +469,10 @@ function render(){
     let label=''; if(first) label=jan&&yearView?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; else if(ppd>=18||(ppd>=6&&mon)) label=String(dt.getUTCDate());
     if(!label) continue;
     g.font=(first?'600 ':'400 ')+'11px '+FONT; g.fillStyle=first?C.fg:i===todayI?C.ink:C.muted;
-    const w=g.measureText(label).width; g.fillText(label,first?x+3:X(i)-w/2,14)}
+    // in the day views the month name sits centred on its line like a day number; a neighbouring day number that would run into it gives way
+    const w=g.measureText(label).width, mw=k=>{const d=days[k]; if(yearView||!d||new Date(d.k).getUTCDate()!==1) return 0; g.font='600 11px '+FONT; const r=g.measureText(MON[new Date(d.k).getUTCMonth()]).width; g.font='400 11px '+FONT; return r};
+    if(!first&&Math.max(mw(i-1),mw(i+1))/2+w/2+4>ppd) continue;
+    g.fillText(label,first&&yearView?x+3:X(i)-w/2,14)}
   // bands
   const sumW=wNow.reduce((a,b)=>a+Math.max(0,b),0)||1, avail=Ht-top-2; let y0=top;
   PARTS.forEach((p,j)=>{
