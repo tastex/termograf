@@ -183,7 +183,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     <div class="when" id="date">Загружаем погоду…</div>
   </header>
   <div class="note" id="note" hidden>Это пример, а не настоящая погода: внутри Claude страница не может её загрузить. Настоящая — на tastex.github.io/termograf/three.html</div>
-  <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день. Тяните влево и вправо, нажмите на график, чтобы раскрыть его"></canvas></div>
+  <div class="chartbox" id="box"><canvas id="cv" aria-label="Три графика: утро, день и вечер, по точке на день, а в приближении по часам. Тяните влево и вправо, нажмите на график, чтобы раскрыть его"></canvas></div>
   <div class="ovbox" id="ovbox"><canvas id="ov" aria-label="Обзор загруженного периода"></canvas><button class="ovz" id="ovz" type="button" hidden><span></span></button></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Масштаб">
@@ -252,6 +252,7 @@ const MK=Object.keys(METRICS);
 // exactly what the main page asks for (more than this page needs), so the two share the answers kept in the phone's memory
 const VARS='temperature_2m,apparent_temperature,wind_speed_10m,wind_gusts_10m,wind_direction_10m,pressure_msl,relative_humidity_2m,cloud_cover,precipitation,weather_code';
 let metric='temp'; try{const m=localStorage.getItem('metric'); if(METRICS[m]) metric=m}catch(e){}
+let MI=MK.indexOf(metric); // the metric's place among the hours kept for each day
 const M=()=>METRICS[metric], fmtV=v=>v==null||isNaN(v)?'—':M().num?M().num(v):String(Math.round(v))+(M().unit==='%'?'%':'');
 const plur=(n,f)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<20?f[2]:b===1?f[0]:b>=2&&b<=4?f[1]:f[2])};
 const DN=['день','дня','дней'], NED=['неделю','недели','недель'], MES=['месяц','месяца','месяцев'];
@@ -325,9 +326,10 @@ const archKeep=(start,end)=>{const a=new Date(start), b=new Date(end), whole=a.g
 function daysFrom(t,s,now){ // s: hourly values for each metric; every day keeps them all (m), v is the one on screen
   const map=new Map();
   for(let i=0;i<t.length;i++){const d=dayOf(t[i]), h=new Date(t[i]).getUTCHours();
-    let r=map.get(d); if(!r){r={k:d,s:{},n:{}};MK.forEach(k=>{r.s[k]=[0,0,0];r.n[k]=[0,0,0]});map.set(d,r)}
-    PARTS.forEach((p,j)=>{if(h>=p.a&&h<=p.b) MK.forEach(k=>{const v=s[k][i]; if(v!=null){r.s[k][j]+=v;r.n[k][j]++}})})}
-  return [...map.values()].sort((a,b)=>a.k-b.k).map(r=>{const m={}; MK.forEach(k=>m[k]=r.n[k].map((n,j)=>n>=3?r.s[k][j]/n:null)); return {k:r.k,m,v:m[metric]}});
+    let r=map.get(d); if(!r){r={k:d,s:{},n:{},h:new Float32Array(MK.length*15).fill(NaN)};MK.forEach(k=>{r.s[k]=[0,0,0];r.n[k]=[0,0,0]});map.set(d,r)}
+    PARTS.forEach((p,j)=>{if(h>=p.a&&h<=p.b) MK.forEach((k,mi)=>{const v=s[k][i]; if(v!=null){r.s[k][j]+=v;r.n[k][j]++;r.h[mi*15+j*5+h-p.a]=v}})})}
+  // m: the mean of each part of the day; h: its five hours as well, for the charts zoomed in to hours (metric × part × hour)
+  return [...map.values()].sort((a,b)=>a.k-b.k).map(r=>{const m={}; MK.forEach(k=>m[k]=r.n[k].map((n,j)=>n>=3?r.s[k][j]/n:null)); return {k:r.k,m,v:m[metric],h:r.h}});
 }
 const hourly=j=>{const s={}; MK.forEach(k=>{const a=j.hourly[METRICS[k].v]||[], c=METRICS[k].k; s[k]=c?a.map(v=>v==null?v:v*c):a}); return s};
 function setDays(list,now){ // keep the day under the cursor when the data is replaced
@@ -442,14 +444,15 @@ async function fillHole(){ // the empty year under the view first, then its neig
 }
 
 /* ---------- view ---------- */
-const clampC=c=>Math.max(0,Math.min(days.length-1,c));
+const clampC=c=>Math.max(-edge,Math.min(days.length-1+edge,c)); // zoomed in to hours, the first and last days' outer hours too
 function goToday(){center=todayI; draw()}
 function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
-function scaleFor(j){ // each chart scales to the days around the view, so day-to-day changes fill its height
+function scaleFor(j,hours){ // each chart scales to the days around the view, so day-to-day changes fill its height
   let lo=1e9,hi=-1e9; const a=Math.max(0,Math.floor(vc-span*1.5)), b=Math.min(days.length-1,Math.ceil(vc+span*1.5)); // a window on each side and a half more, so the scale moves rarely
-  const c=there(j); for(let i=a;i<=b;i++) for(const v of [days[i].v[j],c(i)]){if(v==null) continue; if(v<lo)lo=v; if(v>hi)hi=v}
+  const c=there(j), put=v=>{if(v==null) return; if(v<lo)lo=v; if(v>hi)hi=v};
+  for(let i=a;i<=b;i++){put(days[i].v[j]); put(c(i)); if(hours){const o=CMP&&CMP.get(days[i].k); for(let k=0;k<5;k++){put(hv(days[i],j,k)); put(hv(o,j,k))}}}
   const {g,min,lim}=M(); if(lo>hi){lo=0;hi=10} let mn=Math.floor((lo-g/2)/g)*g, mx=Math.ceil((hi+g/2)/g)*g;
   if(mx-mn<min){const m=(mn+mx)/2; mn=Math.floor((m-min/2)/g)*g; mx=mn+min}
   if(lim){if(mn<lim[0]){mx+=lim[0]-mn;mn=lim[0]} if(mx>lim[1]){mn=Math.max(lim[0],mn-(mx-lim[1]));mx=lim[1]}}
@@ -480,75 +483,152 @@ function setFocus(j){
 }
 const snapPx=x=>Math.round(x)+.5;
 function draw(){ if(!days.length||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
-let geom=null;
+let geom=null, stepTw=null, stepR=1, edge=0;
+// How far the charts have turned into hourly ones: 0 — a point a day, the mean of the part of the day; 1 — each of its five hours.
+// It follows the zoom itself, so the hours grow out of the daily line as the fingers spread, and the scale buttons stay daily
+const hourMix=ppd=>Math.max(0,Math.min(1,(ppd-40)/20))*Math.max(0,Math.min(1,(12-span)/2));
+const hv=(d,j,k)=>{const h=d&&d.h; if(!h||k<0||k>4) return null; const x=h[MI*15+j*5+k]; return x===x?x:null};
+// The readings a chart's line goes through: one a day (r = day), or five a day (r = day*5 + hour of the part).
+// While the hours grow in, each one is between the daily line at its place and its own value
+function series(j,cmp,i0,i1,Rd,mix){
+  const dv=cmp?there(j):here(j);
+  if(Rd===1) return i=>{const v=i>=0&&i<days.length?dv(i):null; return v??null};
+  const hr=cmp?(i,k)=>{const d=days[i]; return hv(d&&CMP?CMP.get(d.k):null,j,k)}:(i,k)=>hv(days[i],j,k);
+  const m=tangents(dv,i0-3,i1+3), r0=i0*5, r1=i1*5+4, a=new Float64Array(r1-r0+1);
+  for(let r=r0;r<=r1;r++){const i=Math.floor(r/5), k=r-5*i, dc=dv(i)==null?null:valueAt(dv,i+(k-2)/5,m), h=hr(i,k);
+    a[r-r0]=h==null?(mix<.5&&dc!=null?dc:NaN):dc==null?h:dc+(h-dc)*mix}
+  return r=>{if(r<r0||r>r1) return null; const v=a[r-r0]; return v===v?v:null};
+}
+const bez=(p,u)=>{const v=1-u; return [v*v*v*p[0]+3*v*v*u*p[2]+3*v*u*u*p[4]+u*u*u*p[6], v*v*v*p[1]+3*v*v*u*p[3]+3*v*u*u*p[5]+u*u*u*p[7]]};
+const meets=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
+const PN=['Утро','День','Вечер'], lbls=[...document.querySelectorAll('.part .lbl')];
 function render(){
   const [g,W,Ht]=fit($('cv')), ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e','cmp'].forEach(k=>C[k]=css('--'+k));
-  // the cursor stays in the middle; while a finger, the wheel or the strip moves the chart it follows them smoothly
-  // and the dots glide along the lines, and once let go it settles on the nearest day
+  const mix=hourMix(ppd), Rd=mix>0?5:1, Rs=mix>=.5?5:1, nowT=performance.now(); stepR=Rs; edge=Rs>1?.4:0;
+  // The cursor stays in the middle and the charts step under it reading by reading: a day, or an hour once zoomed in to hours.
+  // Each step is a quick ease-out (60 ms for a short one, up to 150 ms), so the points click into place under the cursor like a
+  // magnet. Swiped fast, the charts run smoothly and the dots glide along the lines; let go, they settle on the nearest reading
   const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3;
-  const wheeling=performance.now()-wheelT<180, held=drag||ovDrag||glide||wheeling||pinch, want=held||spd>1.2?center:Math.round(center);
-  if(reduce()||Math.abs(want-vc)>span/4) vc=want; else vc+=(want-vc)*(held||spd>1.2?.7:.5);
-  if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; if(!drag) center=vc}
+  const wheeling=nowT-wheelT<180, want=pinch||spd>3?center:clampC(Math.round(center*Rs)/Rs), ppr=ppd/Rs;
+  if(pinch||reduce()||Math.abs(want-vc)>span/4){vc=want;stepTw=null}
+  else if(ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={from:vc,to:want,t:nowT,ms:Math.min(150,Math.max(60,Math.abs(want-vc)*ppd*2.2))};
+    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=k>=1?want:stepTw.from+(want-stepTw.from)*(1-Math.pow(1-k,3))}
+  else {stepTw=null; vc+=(want-vc)*(spd>3?.6:.35)}
+  if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; stepTw=null; if(!drag) center=vc}
   fillHole(); if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
   // springy band weights
   if(wT0){const k=reduce()?1:Math.min(1,(performance.now()-wT0)/360), e=backOut(k); wNow=wFrom.map((f,i)=>f+(wTo[i]-f)*e); if(k<1) draw(); else {wNow=wTo.slice(); wT0=0}}
   const viewC=vc+pull/ppd, X=i=>W/2+(i-viewC)*ppd, top=24, cx=snapPx(W/2); // cursor line and dots on the same pixel as the day lines
   geom={W,Ht,top};
-  const tgt=PARTS.map((_,j)=>scaleFor(j)); if(!ys) ys=tgt.map(s=>s.slice());
+  const tgt=PARTS.map((_,j)=>scaleFor(j,mix>0)); if(!ys) ys=tgt.map(s=>s.slice());
   let moving=false; ys.forEach((s,j)=>{for(const q of [0,1]){const d=tgt[j][q]-s[q]; if(Math.abs(d)>.02){s[q]+=d*.25;moving=true} else s[q]=tgt[j][q]}}); if(moving) draw();
   g.clearRect(0,0,W,Ht);
   const i0=Math.max(0,Math.floor(viewC-span/2)-2), i1=Math.min(days.length-1,Math.ceil(viewC+span/2)+2);
-  const xs=X(0)-ppd/2, xe=X(days.length-1)+ppd/2;
-  // future, week and month lines, date labels
-  const xt=X(todayI)+ppd/2; if(xt<xe){g.fillStyle=C.future;g.fillRect(Math.max(0,xt),0,Math.min(W,xe)-Math.max(0,xt),Ht)}
-  g.textBaseline='alphabetic';
-  const yearView=ppd<3;
-  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), x=snapPx(X(i)), first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1, jan=first&&dt.getUTCMonth()===0;
-    if((yearView?first:(mon||first))){g.strokeStyle=first?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(x,top-6);g.lineTo(x,Ht);g.stroke()}
-    let label=''; if(first) label=jan&&yearView?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; else if(ppd>=18||(ppd>=6&&mon)) label=String(dt.getUTCDate());
-    if(!label) continue;
-    g.font=(first?'600 ':'400 ')+'11px '+FONT; g.fillStyle=first?C.fg:i===todayI?C.ink:C.muted;
-    // in the day views the month name sits centred on its line like a day number; a neighbouring day number that would run into it gives way
-    const w=g.measureText(label).width, mw=k=>{const d=days[k]; if(yearView||!d||new Date(d.k).getUTCDate()!==1) return 0; g.font='600 11px '+FONT; const r=g.measureText(MON[new Date(d.k).getUTCMonth()]).width; g.font='400 11px '+FONT; return r};
-    if(!first&&Math.max(mw(i-1),mw(i+1))/2+w/2+4>ppd) continue;
-    g.fillText(label,first&&yearView?x+3:X(i)-w/2,14)}
-  // bands
+  const xs=X(0)-ppd/2, xe=X(days.length-1)+ppd/2, pos=r=>(r-(Rd-1)/2)/Rd, pr=ppd/Rd, ra=i0*Rd, rb=i1*Rd+Rd-1;
+  // the forecast: from the end of today, or zoomed in to hours, from the next hour of each part of the day
+  const nowH=Math.floor((nowMs-dayOf(nowMs))/H), xt=X(todayI+.5);
+  const futX=j=>Rs>1?X(todayI+(Math.max(0,Math.min(5,nowH-PARTS[j].a+1))-2.5)/5):xt;
+  const futR=j=>Rs>1?todayI*5+Math.max(0,Math.min(5,nowH-PARTS[j].a+1)):Rd>1?todayI*5+5:todayI+1; // first reading of the forecast
+  if(xt<xe){g.fillStyle=C.future;g.fillRect(Math.max(0,xt),0,Math.min(W,xe)-Math.max(0,xt),top)}
+  // ---- first where everything goes: the lines, then the labels in the places no line runs through and no other label stands
   const sumW=wNow.reduce((a,b)=>a+Math.max(0,b),0)||1, avail=Ht-top-2; let y0=top;
+  const cols=new Map(), seg2=(a,b)=>{for(let k=Math.floor(Math.min(a[0],b[0])/16);k<=Math.floor(Math.max(a[0],b[0])/16);k++){let c=cols.get(k); if(!c) cols.set(k,c=[]); c.push([a,b])}};
+  const cross=(r,mg=1.5)=>{const x0=r.x-mg,x1=r.x+r.w+mg,y0=r.y-mg,y1=r.y+r.h+mg, seen=new Set();
+    for(let k=Math.floor(x0/16);k<=Math.floor(x1/16);k++) for(const s of cols.get(k)||[]){if(seen.has(s)) continue; seen.add(s);
+      const [a,b]=s; let t0=0,t1=1; const dx=b[0]-a[0],dy=b[1]-a[1]; let ok=true; // Liang–Barsky: does the piece enter the box
+      for(const [pp,qq] of [[-dx,a[0]-x0],[dx,x1-a[0]],[-dy,a[1]-y0],[dy,y1-a[1]]]){
+        if(pp===0){if(qq<0){ok=false;break}} else {const t=qq/pp; if(pp<0){if(t>t1){ok=false;break} if(t>t0)t0=t} else {if(t<t0){ok=false;break} if(t<t1)t1=t}}}
+      if(ok) return true}
+    return false};
+  const taken=[], tbox=(x,y,w)=>({x:x-2,y:y-7,w:w+4,h:14}), gapB=(x,y,w)=>({x:x-3,y:y-8,w:w+6,h:16});
+  const free=(x,y,w,a,b)=>x>=2&&x+w<=W-2&&y-7>=a&&y+7<=b&&!cross(tbox(x,y,w))&&!taken.some(t=>meets(gapB(x,y,w),t));
+  const EF='600 11px '+FONT, YF='400 11px '+FONT, bands=[];
   PARTS.forEach((p,j)=>{
     const bh=Math.max(0,wNow[j])/sumW*avail; const yb=y0; y0+=bh; if(bh<14) return;
     const [mn,mx]=ys[j], pad=Math.min(10,bh*.12), Y=v=>yb+pad+(mx-v)/(mx-mn||1)*(bh-2*pad), col=C['c-'+p.k];
+    const st=M().step, step=(mx-mn)>st[2]?st[1]:st[0];
+    const line=f=>{const m=tangents(f,ra-1,rb+1), pcs=[];
+      for(let r=ra;r<rb;r++){const va=f(r), vb=f(r+1); if(va==null||vb==null) continue; const xa=X(pos(r)), xb=X(pos(r+1));
+        const q=[xa,Y(va),xa+pr/3,Y(va+(m[r]??0)/3),xb-pr/3,Y(vb-(m[r+1]??0)/3),xb,Y(vb)]; pcs.push({r,q});
+        let a=[q[0],q[1]]; for(const u of [.25,.5,.75,1]){const b=bez(q,u); seg2(a,b); a=b}}
+      return {f,m,pcs}};
+    const B={j,yb,bh,Y,col,mn,mx,step,fx:futX(j),fr:futR(j),cmp:cmpWant?line(series(j,true,i0,i1,Rd,mix)):null,own:line(series(j,false,i0,i1,Rd,mix)),labs:[],dots:[]};
+    bands.push(B);
+    const lo=yb+2, hi=yb+bh-2;
+    // the chart's name at the top right, or a line lower where a line runs there; with no free place it keeps a background of its own
+    g.font=EF; const nm=PN[j], nw=g.measureText(nm).width; let at=null;
+    for(const y of [yb+11,yb+25,yb+39]) if(free(W-nw-4,y,nw,lo,hi)){at=[W-nw-4,y];break}
+    B.name={txt:nm,x:(at||[W-nw-4])[0],y:(at||[0,yb+11])[1],w:nw,bg:!at}; taken.push(gapB(B.name.x,B.name.y,nw));
+    // extremes: a reading higher (lower) than every other within about 56 px on each side, by at least half a scale step,
+    // so the dots mark the turns of the line and not every wiggle; looked for in the data around, so they do not jump as the view moves
+    const f=B.own.f, n=Math.max(1,Math.round(56/pr)), prom=M().g/2, ex=[];
+    for(let r=ra;r<=rb;r++){const v=f(r); if(v==null) continue; const x=X(pos(r)); if(x<-2||x>W+2) continue;
+      let mxOk=true, mnOk=true, l=v, h=v;
+      for(let q=r-n;q<=r+n&&(mxOk||mnOk);q++){if(q===r) continue; const w=f(q); if(w==null) continue; if(w<l)l=w; if(w>h)h=w;
+        if(q<r?w>=v:w>v) mxOk=false; if(q<r?w<=v:w<v) mnOk=false}
+      if(mxOk&&v-l>=prom) ex.push({r,x,y:Y(v),v,s:1}); else if(mnOk&&h-v>=prom) ex.push({r,x,y:Y(v),v,s:-1})}
+    // an extreme's number: above its dot (below for a low), a little aside or a line further off when a line or a label is in the way,
+    // or level with the dot on either side when the chart's edge is too close; with no free place, or the same number already shown next to it, the number is left out and the dot stays
+    g.font=EF;
+    ex.forEach(e=>{B.dots.push(e); const txt=fmtV(e.v), w=g.measureText(txt).width;
+      if(B.labs.some(o=>o.txt===txt&&o.s===e.s&&Math.abs(o.ex-e.x)<40)) return;
+      const tries=[]; for(const d of [11,22,33]) for(const tx of [e.x-w/2,e.x-w-3,e.x+3]) tries.push([tx,e.s>0?e.y-d:e.y+d]);
+      tries.push([e.x+7,e.y],[e.x-w-7,e.y]);
+      let at=null; for(const [tx,ty] of tries){const x=Math.min(W-w-3,Math.max(3,tx)); if(free(x,ty,w,lo,hi)){at=[x,ty];break}}
+      if(at){B.labs.push({txt,x:at[0],y:at[1],s:e.s,ex:e.x,font:EF}); taken.push(gapB(at[0],at[1],w))}});
+    // the scale on the left: a number the line or another label would cross is left out
+    g.font=YF; B.ylab=[];
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v); if(y<yb+8||y>yb+bh-6) continue; const t=metric==='wind'?String(v):fmtV(v), w=g.measureText(t).width, lx=Math.max(0,xs)+2;
+      if(cross(tbox(lx,y,w))||taken.some(b=>meets(gapB(lx,y,w),b))) continue; B.ylab.push([t,lx,y]); taken.push(gapB(lx,y,w))}
+  });
+  // lines with holes where a label stands
+  const hl=(x0,x1,y)=>{let x=x0; const cut=taken.filter(r=>r.y<=y&&y<=r.y+r.h&&r.x+r.w>x0&&r.x<x1).sort((a,b)=>a.x-b.x);
+    g.beginPath(); for(const r of cut){if(r.x>x){g.moveTo(x,y);g.lineTo(r.x,y)} x=Math.max(x,r.x+r.w)} if(x<x1){g.moveTo(x,y);g.lineTo(x1,y)} g.stroke()};
+  const vl=(x,y0,y1)=>{let y=y0; const cut=taken.filter(r=>r.x<=x&&x<=r.x+r.w&&r.y+r.h>y0&&r.y<y1).sort((a,b)=>a.y-b.y);
+    g.beginPath(); for(const r of cut){if(r.y>y){g.moveTo(x,y);g.lineTo(x,r.y)} y=Math.max(y,r.y+r.h)} if(y<y1){g.moveTo(x,y);g.lineTo(x,y1)} g.stroke()};
+  // ---- then the drawing: week and month lines (every midnight once zoomed in to hours), date labels
+  g.textBaseline='alphabetic';
+  const yearView=ppd<3; let lastL=-1e9; // a date label that would touch the one before it is left out
+  for(let i=i0;i<=i1;i++){const dt=new Date(days[i].k), first=dt.getUTCDate()===1, mon=dt.getUTCDay()===1, jan=first&&dt.getUTCMonth()===0;
+    if(Rs>1){const x=snapPx(X(i-.5)); g.strokeStyle=first?C['grid-strong']:C.grid; g.lineWidth=1; vl(x,top-6,Ht)}
+    else if(yearView?first:(mon||first)){const x=snapPx(X(i)); g.strokeStyle=first?C['grid-strong']:C.grid;g.lineWidth=1;vl(x,top-6,Ht)}
+    let label=''; if(Rs>1) label=WD[dt.getUTCDay()]+' '+dt.getUTCDate()+(first?' '+MON[dt.getUTCMonth()]:'');
+    else if(first) label=jan&&yearView?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; else if(ppd>=18||(ppd>=6&&mon)) label=String(dt.getUTCDate());
+    if(!label) continue;
+    g.font=(first?'600 ':'400 ')+'11px '+FONT; g.fillStyle=first?C.fg:i===todayI?C.ink:C.muted;
+    // in the day views the month name sits centred on its line like a day number; a neighbouring day number that would run into it gives way
+    const w=g.measureText(label).width, mw=k=>{const d=days[k]; if(yearView||Rs>1||!d||new Date(d.k).getUTCDate()!==1) return 0; g.font='600 11px '+FONT; const r=g.measureText(MON[new Date(d.k).getUTCMonth()]).width; g.font='400 11px '+FONT; return r};
+    if(!first&&Math.max(mw(i-1),mw(i+1))/2+w/2+4>ppd) continue;
+    const lx=first&&yearView?snapPx(X(i))+3:X(i)-w/2; if(lx<lastL+4) continue; g.fillText(label,lx,14); lastL=lx+w}
+  // bands
+  const rc=vc*Rd+(Rd-1)/2; // the cursor, counted in readings
+  bands.forEach(B=>{const {j,yb,bh,Y,col,mn,mx,step}=B;
     g.save(); g.beginPath(); g.rect(0,yb,W,bh); g.clip();
-    const st=M().step, step=(mx-mn)>st[2]?st[1]:st[0]; g.lineWidth=1; g.strokeStyle=C.grid;
-    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Math.round(Y(v))+.5; if(y<yb+4||y>yb+bh-4) continue; g.beginPath();g.moveTo(Math.max(0,xs),y);g.lineTo(Math.min(W,xe),y);g.stroke()}
-    // line through each day's value; forecast lighter
-    // the compared city first, underneath, in its own colour and a little thinner; then this city's line over it
-    const line=(f,col,lw,r)=>{const m=tangents(f,i0-1,i1+1), segs=[]; let cur=null;
-      for(let i=i0;i<=i1;i++){const v=f(i); if(v==null){cur=null;continue} if(!cur){cur=[];segs.push(cur)} cur.push(i)}
-      const path=s=>{g.beginPath();g.moveTo(X(s[0]),Y(f(s[0])));for(let k=0;k<s.length-1;k++){const a=s[k],b=s[k+1],va=f(a),vb=f(b);
-        g.bezierCurveTo(X(a)+ppd/3,Y(va+(m[a]??0)/3),X(b)-ppd/3,Y(vb-(m[b]??0)/3),X(b),Y(vb))}};
-      g.lineWidth=lw;g.lineJoin='round';g.strokeStyle=col;
-      segs.forEach(s=>{ if(s.length<2) return;
-        g.save();g.beginPath();g.rect(0,yb,Math.max(0,xt),bh);g.clip();path(s);g.stroke();g.restore();
-        if(xt<W){g.save();g.beginPath();g.rect(Math.max(0,xt),yb,W,bh);g.clip();g.globalAlpha=.45;path(s);g.stroke();g.restore()}});
-      if(ppd>=12) for(let i=i0;i<=i1;i++){const v=f(i); if(v==null) continue; g.beginPath();g.arc(X(i),Y(v),r,0,7);
-        if(i>todayI){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.strokeStyle=col;g.stroke()} else {g.fillStyle=col;g.fill()}}};
-    if(cmpWant) line(there(j),C.cmp,1.8,2.2);
-    line(here(j),col,2.2,2.6);
-    // labels: scale on the left, the chart's name on the right
-    g.font='400 11px '+FONT;g.textBaseline='middle';
-    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Y(v); if(y<yb+8||y>yb+bh-6) continue; const t=metric==='wind'?String(v):fmtV(v), w=g.measureText(t).width;const lx=Math.max(0,xs);g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(lx,y-7,w+6,14);g.globalAlpha=1;g.fillStyle=C.muted;g.fillText(t,lx+2,y)}
-    g.font='600 11px '+FONT; const nm=['Утро','День','Вечер'][j], nw=g.measureText(nm).width;
-    g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(W-nw-8,yb+3,nw+8,15);g.globalAlpha=1;g.fillStyle=col;g.fillText(nm,W-nw-4,yb+11);
-    // cursor dot on the line
-    if(cmpWant){const f=there(j), v=valueAt(f,vc,tangents(f,Math.floor(vc)-1,Math.floor(vc)+2));
-      if(v!=null){g.beginPath();g.arc(cx,Y(v),4.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
-    const cv=valueAt(here(j),vc,tangents(here(j),Math.floor(vc)-1,Math.floor(vc)+2));
+    const fx=B.fx; if(fx<xe){g.fillStyle=C.future;g.fillRect(Math.max(0,fx),yb,Math.min(W,xe)-Math.max(0,fx),bh)}
+    g.lineWidth=1; g.strokeStyle=C.grid;
+    for(let v=Math.ceil(mn/step)*step;v<=mx;v+=step){const y=Math.round(Y(v))+.5; if(y<yb+4||y>yb+bh-4) continue; hl(Math.max(0,xs),Math.min(W,xe),y)}
+    // the compared city first, underneath, in its own colour and a little thinner; then this city's line over it; the forecast lighter
+    const stroke=(L,c,lw)=>{const path=()=>{g.beginPath(); let last=null; for(const {r,q} of L.pcs){if(last!==r-1) g.moveTo(q[0],q[1]); g.bezierCurveTo(q[2],q[3],q[4],q[5],q[6],q[7]); last=r}};
+      g.lineWidth=lw;g.lineJoin='round';g.strokeStyle=c;
+      g.save();g.beginPath();g.rect(0,yb,Math.max(0,fx),bh);g.clip();path();g.stroke();g.restore();
+      if(fx<W){g.save();g.beginPath();g.rect(Math.max(0,fx),yb,W,bh);g.clip();g.globalAlpha=.45;path();g.stroke();g.restore()}};
+    if(B.cmp) stroke(B.cmp,C.cmp,1.8);
+    stroke(B.own,col,2.2);
+    // dots on the extremes only: filled in the past, hollow in the forecast
+    B.dots.forEach(e=>{g.beginPath();g.arc(e.x,e.y,3,0,7); if(e.r>=B.fr){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.strokeStyle=col;g.stroke()} else {g.fillStyle=col;g.fill()}});
+    g.textBaseline='middle';
+    B.labs.forEach(l=>{g.font=l.font;g.fillStyle=col;g.fillText(l.txt,l.x,l.y)});
+    g.font=YF; g.fillStyle=C.muted; B.ylab.forEach(([t,x,y])=>g.fillText(t,x,y));
+    const N=B.name; g.font=EF; if(N.bg){g.fillStyle=C.paper;g.globalAlpha=.85;g.fillRect(N.x-4,N.y-8,N.w+8,15);g.globalAlpha=1} g.fillStyle=col; g.fillText(N.txt,N.x,N.y);
+    // cursor dots on the lines
+    if(B.cmp){const v=valueAt(B.cmp.f,rc,B.cmp.m); if(v!=null){g.beginPath();g.arc(cx,Y(v),4.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
+    const cv=valueAt(B.own.f,rc,B.own.m);
     if(cv!=null){g.beginPath();g.arc(cx,Y(cv),5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=col;g.stroke()}
     g.restore();
-    if(y0<Ht-4){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(0,Math.round(y0)+.5);g.lineTo(W,Math.round(y0)+.5);g.stroke()}
+    const yl=yb+bh; if(yl<Ht-4){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(0,Math.round(yl)+.5);g.lineTo(W,Math.round(yl)+.5);g.stroke()}
   });
-  // cursor line, behind the dots
-  g.globalCompositeOperation='destination-over';g.strokeStyle=C.fg;g.globalAlpha=.35;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-6);g.lineTo(cx,Ht);g.stroke();g.globalAlpha=1;g.globalCompositeOperation='source-over';
+  // cursor line, behind the dots, broken where a label stands
+  g.globalCompositeOperation='destination-over';g.strokeStyle=C.fg;g.globalAlpha=.35;g.lineWidth=1;vl(cx,top-6,Ht);g.globalAlpha=1;g.globalCompositeOperation='source-over';
   if(fade){const xr=Math.min(W,X(fade.i)-ppd/2); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
   // the two ends: more archive on its way, the start of the archive, the end of the forecast
   const hint=(x0,x1,l1,l2,c)=>{if(x1-x0<60) return; g.save();g.textAlign='center';g.textBaseline='middle';g.fillStyle=c;
@@ -558,24 +638,28 @@ function render(){
   for(const [ha,hb] of holes){const a=Math.max(0,X((ha-days[0].k)/DAY)-ppd/2), b=Math.min(W,X((hb-days[0].k)/DAY)-ppd/2);
     if(b-a>=90) paused?hint(a,b,...LIMIT_SAY[err].slice(1),C.muted):hint(a,b,'Загружаем',`архив за ${new Date(Math.max(ha,Math.min(hb-DAY,days[Math.round(vc)]?.k??ha))).getUTCFullYear()} год`,C.ink)}
   if(xe<W) hint(xe,W,'Конец прогноза','дальше данных нет',C.muted);
-  readout(Math.round(vc));
-  $('today').disabled=Math.round(vc)===todayI&&!drag;
+  // the numbers switch at once to the reading being stepped to; only the charts glide
+  const rd=stepTw?stepTw.to:vc, ri=Math.max(0,Math.min(days.length-1,Math.round(rd)));
+  readout(ri,Rs>1?Math.max(0,Math.min(4,Math.round((rd-ri)*5)+2)):null);
+  $('today').disabled=ri===todayI&&!drag;
   drawOv(C);
 }
-function readout(i){
+function readout(i,k){ // k: the hour of each part of the day (0–4) once zoomed in to hours, otherwise null for the parts' means
   const d=days[i]; if(!d) return; const dt=new Date(d.k), dd=Math.round((d.k-dayOf(nowMs))/DAY), ad=-dd;
   const yrs=n=>{const m10=n%10,m100=n%100;return n===1?'год назад':n+(m10===1&&m100!==11?' год назад':m10>=2&&m10<=4&&(m100<12||m100>14)?' года назад':' лет назад')};
   const rel={'-2':'позавчера','-1':'вчера','0':'сегодня','1':'завтра','2':'послезавтра'}[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yrs(Math.max(1,Math.round(ad/365.25))));
   $('date').textContent=WD[dt.getUTCDay()]+', '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]+(dt.getUTCFullYear()!==new Date(nowMs).getUTCFullYear()?' '+dt.getUTCFullYear():'');
   const mt=M(); $('rel').textContent=rel[0].toUpperCase()+rel.slice(1)+(d.hole?' · загружаем архив':dd>0?' · прогноз':'')+(metric!=='temp'?' · '+mt.name.toLowerCase()+', '+mt.unit.trim():'');
-  PARTS.forEach((p,j)=>{const v=d.v[j], pv=days[i-1]?.v[j]; $('n'+j).textContent=fmtV(v);
-    const el=$('d'+j); if(v==null||pv==null){el.textContent='\u00a0';el.className='dv';return}
+  const val=(o,j)=>!o?null:k==null?(o.m?o.m[metric][j]:null):hv(o,j,k);
+  PARTS.forEach((p,j)=>{const lt=PN[j]+' · '+(k==null?p.a+'–'+p.b:(p.a+k)+':00'); if(lbls[j].textContent!==lt) lbls[j].textContent=lt;
+    const v=val(d,j), pv=val(days[i-1],j); $('n'+j).textContent=fmtV(v);
+    const el=$('d'+j); if(v==null||pv==null){el.textContent=' ';el.className='dv';return}
     const dv=v-pv, a=Math.abs(dv), same=a<(mt.same||1); // wind is shown to a tenth, so its changes are too
     el.textContent=same?'так же':(dv>0?'+':'−')+(metric==='wind'?mt.num(a):Math.round(a))+mt.unit+' за сутки'; el.className='dv'+(same?'':dv>0?' warm':' cool')});
   if(cmpWant){ // the other city: its number right under this city's, and how it differs from here
-    let any=false;
-    PARTS.forEach((p,j)=>{const v=d.v[j], c=there(j)(i), el=$('e'+j); $('c'+j).textContent=fmtV(c); if(c!=null) any=true;
-      if(c==null||v==null){el.textContent='\u00a0';el.className='dv cd';return}
+    let any=false; const o=CMP?CMP.get(d.k):null;
+    PARTS.forEach((p,j)=>{const v=val(d,j), c=val(o,j), el=$('e'+j); $('c'+j).textContent=fmtV(c); if(c!=null) any=true;
+      if(c==null||v==null){el.textContent=' ';el.className='dv cd';return}
       const dv=c-v, a=Math.abs(dv), same=a<(mt.same||1);
       el.textContent=same?'так же':'на '+(metric==='wind'?mt.num(a):Math.round(a))+mt.unit+' '+(dv>0?mt.more:mt.less); el.className='dv cd'+(same?'':dv>0?' warm':' cool')});
     $('vsNote').textContent=cmpFail?'не загрузилось':!CMP?'загружаем…':any?'':'нет прогноза на эту дату';
@@ -634,7 +718,7 @@ const box=$('box'), rub=r=>{const W=box.clientWidth;return W*.3*(1-Math.exp(-r/(
 // two fingers (or a trackpad pinch, which comes as the wheel with ctrl) zoom between a week and a year;
 // the day between the fingers stays under them
 const ptrs=new Map(); let pinch=null;
-const SPAN_MIN=7, SPAN_MAX=365;
+const SPAN_MIN=3, SPAN_MAX=365; // closer than about a week the charts turn hourly
 function zoomAt(d,x,i){ // d: days on screen; x: px from the chart's left edge that shows day i (fractional)
   const W=box.clientWidth; span=Math.min(SPAN_MAX,Math.max(SPAN_MIN,d)); center=clampC(i-(x-W/2)/(W/span)); vc=center; lastC=null; spd=0;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.d/span))<.03)));
@@ -652,7 +736,7 @@ window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.p
   if(drag.lock!=='x')return;
   const dx=e.clientX-drag.last, now=performance.now(), ppd=box.clientWidth/span;
   drag.v-=dx/ppd; center=clampC(drag.v);
-  const over=drag.v-(days.length-1), under=-drag.v; pull=over>0?rub(over*ppd):under>0?-rub(under*ppd):0; // rubber band at both ends
+  const over=drag.v-(days.length-1+edge), under=-edge-drag.v; pull=over>0?rub(over*ppd):under>0?-rub(under*ppd):0; // rubber band at both ends
   vel=dx/Math.max(8,now-drag.t)/ppd; drag.last=e.clientX; drag.t=now; draw()});
 function springBack(){const p0=pull,t0=performance.now();const st=now=>{const k=reduce()?1:Math.min(1,(now-t0)/260);pull=p0*Math.pow(1-k,3);draw();if(k<1)raf=requestAnimationFrame(st)};raf=requestAnimationFrame(st)}
 const unptr=e=>{ptrs.delete(e.pointerId); if(pinch&&ptrs.size<2){pinch=null; ys=null; draw()}};
@@ -669,7 +753,7 @@ box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();
   if(e.ctrlKey){const x=e.clientX-box.getBoundingClientRect().left; zoomAt(span*Math.exp(e.deltaY*.01),x,dayAt(x)); wheelT=performance.now(); return}
   const d=Math.abs(e.deltaX)>Math.abs(e.deltaY)?e.deltaX:e.deltaY;center=clampC(center+d/(box.clientWidth/span));wheelT=performance.now();draw()},{passive:false});
 box.tabIndex=0;
-box.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center=clampC(Math.round(center)+(e.key==='ArrowLeft'?-1:1));draw();e.preventDefault()}});
+box.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){center=clampC(Math.round(center*stepR)/stepR+(e.key==='ArrowLeft'?-1:1)/stepR);draw();e.preventDefault()}});
 document.querySelectorAll('.part').forEach(b=>b.addEventListener('click',()=>setFocus(+b.dataset.j)));
 /* ---------- the city field: the same as on the main page ---------- */
 // A city picked here is kept for every page: the page opens again on it, keeping the day and the scale in view,
@@ -797,7 +881,7 @@ $('ovz').addEventListener('click',()=>{if(!days.length)return; const cur=ovLevel
 function setSpan(d){span=d;ovPick=null;ovA=null;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.d/d))<.03)));ys=null;spd=0;lastC=null;draw()}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
 $('today').addEventListener('click',()=>{viewWant=null;goToday()});
-function useMetric(k){if(!METRICS[k]||k===metric) return; metric=k; store.set('metric',k); days.forEach(d=>d.v=d.m[k]); ys=null; ovKey=''; showMetric(); draw()}
+function useMetric(k){if(!METRICS[k]||k===metric) return; metric=k; MI=MK.indexOf(k); store.set('metric',k); days.forEach(d=>d.v=d.m[k]); ys=null; ovKey=''; showMetric(); draw()}
 function showMetric(){const m=M(); $('modeName').textContent=m.name; $('modeBtn').setAttribute('aria-label','Показывать: '+m.name.toLowerCase()+'. Сменить');
   [...$('modes').children].forEach(li=>li.setAttribute('aria-checked',String(li.dataset.k===metric)))}
 function modesOpen(on){const ul=$('modes'); ul.hidden=!on; $('modeBtn').setAttribute('aria-expanded',String(on)); if(on) ul.querySelector('[aria-checked="true"]')?.focus()}
