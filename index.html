@@ -1385,6 +1385,11 @@ function vsMode(on){vs=on; $('cityForm').classList.toggle('vs',on); $('cityLbl')
 $('cmpBtn').addEventListener('pointerdown',e=>{if(vs) e.preventDefault()}); // a second tap while choosing does not blur the field first
 $('cmpBtn').addEventListener('click',()=>{if(vs){hideSugg(); vsMode(false); $('city').blur(); return} if(cmpWant) setCmp(null); else vsMode(true)});
 showCmp();
+// back to this page with the browser's Back after the city or the compared city was picked on another page: show those
+addEventListener('pageshow',e=>{ if(!e.persisted||!D||!D.where) return; const get=k=>{try{const v=JSON.parse(store.get(k)||'null'); return v&&isFinite(v.lat)&&isFinite(v.lon)?v:null}catch(err){return null}};
+  const w=get('place'), c=get('cmp'), same=(a,b)=>(a&&a.lat)===(b&&b.lat)&&(a&&a.lon)===(b&&b.lon);
+  if(w&&!same(w,D.where)){setPin(null); load(w,false)}
+  if(!same(c,cmpWant)){if(c&&w&&same(c,w)) return; cmpWant=c?{...c,name:cleanName(c.name)}:null; CMP=null; showCmp(); if(cmpWant&&!D.sample) loadCmp(cmpWant); draw()}});
 $('city').addEventListener('input',()=>{const q=$('city').value.trim(); clearTimeout(suggT);
   if(q.length<2){hideSugg();return}
   suggT=setTimeout(async()=>{suggQ=q; let r=[], ok=true; try{r=await geocodeAll(q,6)}catch(e){ok=false} if(suggQ===q&&document.activeElement===$('city')) showSugg(r,ok&&q.length>=3?'wide':null)},250)});

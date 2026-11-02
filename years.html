@@ -100,6 +100,32 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
 @keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}}
 @media (prefers-reduced-motion:reduce){.modes{animation:none}.mbtn svg{transition:none}}
 .note{font:400 13px/1.4 var(--f-body);color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:7px 10px}
+/* the city field, the same as on the main page: suggestions while typing, "where I am", and the city to compare with */
+.foot{justify-content:space-between;gap:14px}
+.city{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
+.city .lbl{font:400 13px var(--f-body);color:var(--muted)}
+.sugg{position:absolute;left:0;bottom:calc(100% + 6px);z-index:15;width:min(320px,calc(100vw - 32px));margin:0;padding:4px;list-style:none;
+  background:var(--paper);border:1px solid var(--grid);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.sugg li{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.sugg li[aria-selected="true"],.sugg li:hover{background:var(--paper-2)}
+.sugg b{font:500 16px var(--f-body);color:var(--fg)}
+.sugg span{font:400 13px var(--f-body);color:var(--muted)}
+.sugg li.wide b{color:var(--ink)}
+.sugg li.nothing{cursor:default}.sugg li.nothing:hover{background:none}
+.city input{font:500 16px var(--f-body);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--grid-strong);border-radius:0;padding:2px 0;width:11ch;flex:0 1 auto;min-width:0;text-overflow:ellipsis}
+.city input:focus{outline:none;border-bottom-color:var(--ink)}
+.locbtn{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:999px;background:var(--paper-2);color:var(--ink);cursor:pointer;padding:0;flex:none}
+.locbtn.busy svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#cmpBtn{color:var(--cmp)}
+#cmpBtn[aria-pressed="true"]{background:var(--cmp);color:var(--paper)}
+.city.vs #locBtn{display:none}
+.city.vs input{border-bottom-color:var(--cmp)}
+.city.vs .lbl{color:var(--cmp);white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);transform:translate(-50%,12px);opacity:0;pointer-events:none;z-index:20;
+  max-width:calc(100% - 32px);background:var(--fg);color:var(--paper);font:500 16px/1.3 var(--f-body);padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);transition:opacity .25s ease,transform .25s ease}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}.locbtn.busy svg{animation:none}}
 </style>
 <style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* iPhone home-screen app: room for the home indicator below; room for the status bar above only when the page runs under it
@@ -119,6 +145,7 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
 </head>
 <body>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="app">
   <div class="brand" aria-hidden="true">термограф</div>
   <header>
@@ -146,7 +173,13 @@ button:focus-visible,a:focus-visible,.chartbox:focus-visible{outline:2px solid v
     <button class="ibtn" id="zin" type="button" aria-label="Меньше лет, крупнее" title="Меньше лет, крупнее"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
     <button class="ibtn" id="today" type="button" aria-label="Перейти к сегодня" title="Перейти к сегодня"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   </div>
-  <div class="foot"><span>Город</span><b id="city">—</b>
+  <div class="foot">
+    <form class="city" id="cityForm">
+      <span class="lbl" id="cityLbl">Город</span>
+      <input id="city" value="" placeholder="Город" autocomplete="off" enterkeyhint="search" aria-label="Город" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false">
+      <ul class="sugg" id="sugg" role="listbox" hidden></ul>
+      <button class="locbtn" id="locBtn" type="button" aria-label="Показать погоду там, где я сейчас"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+    </form>
     <div class="mode">
       <button class="mbtn" id="modeBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="modes"><span id="modeName">Температура</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
       <ul class="modes" id="modes" role="listbox" aria-label="Что показывать" hidden></ul>
@@ -284,6 +317,8 @@ function fakeDays(a,b){const v=[], [c,sw]=M().fake, m=M(); // a plausible climat
     v.push(Math.round(clamp(y,m.lo??-1e9,m.hi??1e9)*10)/10)}
   return {t0:a,v,off:3*3600,at:Date.now()};
 }
+const KIND=/^(город|г\.|городской округ|городское поселение|посёлок городского типа|поселок городского типа|рабочий посёлок|рабочий поселок|пгт\.?|посёлок|поселок|село|деревня|станица|аул)\s+/i;
+const cleanName=n=>{const c=String(n||'').trim().replace(KIND,'').replace(/\s+(городской округ|муниципальный округ)$/i,'').trim(); return c||String(n||'')};
 async function place(){
   const q=new URLSearchParams(location.search), lat=parseFloat(q.get('lat')), lon=parseFloat(q.get('lon'));
   if(isFinite(lat)&&isFinite(lon)) return {name:q.get('city')||'Место',lat,lon};
@@ -292,7 +327,7 @@ async function place(){
 }
 let FP=null, Fcur=null, loadN=0;
 async function load(){
-  const w=W0=await place(); w.name=String(w.name||'').replace(/^(город|г\.)\s+/i,'')||w.name; $('city').textContent=w.name;
+  const w=W0=await place(); w.name=String(w.name||'').replace(/^(город|г\.)\s+/i,'')||w.name; $('city').value=w.name;
   const qs='?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon; $('back').href='./'+qs; $('x3').href='three.html'+qs;
   // the forecast once, for every mode at a time; the archive per mode
   const kf='yrf2:'+w.lat+','+w.lon; let F0=null; try{F0=JSON.parse(store.get(kf)||'null')}catch(e){}
@@ -647,6 +682,108 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ovKe
 const zIn=VIEW_IN?{31:'w',92:'m',365:'s'}[nearest(VIEW_IN.d,[31,92,365])]:'';
 setMode(zIn||(['w','m','s'].includes(mode)?mode:'w'));
 const fromView=applyView();
+/* ---------- the city field: the same as on the main page ---------- */
+// A city picked here is kept for every page: the page opens again on it, keeping the day and the scale in view,
+// and the main page and the others open on it too. The city to compare with is kept the same way
+async function geocodeAll(name,count){
+  const g=await (await om(`https://geocoding-api.open-meteo.com/v1/search?count=${count}&language=ru&name=`+encodeURIComponent(name))).json();
+  return (g.results||[]).map(p=>({name:p.name,lat:p.latitude,lon:p.longitude,region:[p.admin1,p.country].filter((x,i,a)=>x&&a.indexOf(x)===i&&x!==p.name).join(', ')}));
+}
+// The wider search, when the weather service's list of places has nothing: OpenStreetMap knows more spellings («Анталья»)
+// and smaller places. Asked once, on purpose (Enter or the button in the list), never while typing: its rules do not allow that
+async function geocodeWide(name){
+  const r=await (await fetchT('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&accept-language=ru&featureType=settlement&q='+encodeURIComponent(name),8000)).json();
+  return (r||[]).map(p=>{const a=p.address||{}, nm=cleanName(p.name||String(p.display_name||'').split(',')[0]);
+    return {name:nm,lat:+p.lat,lon:+p.lon,region:[a.state||a.region,a.country].filter((x,i,arr)=>x&&arr.indexOf(x)===i&&x!==nm).join(', ')}}).filter(p=>p.name&&isFinite(p.lat)&&isFinite(p.lon));
+}
+async function geocode(name){const r=await geocodeAll(name,1);return r[0]?{name:r[0].name,lat:r[0].lat,lon:r[0].lon}:null}
+async function placeName(lat,lon){
+  try{const r=await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ru`)).json();
+    return cleanName(r.city||r.locality||r.principalSubdivision||'Моё место')}catch(e){return 'Моё место'}
+}
+function gps(){return new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('nogeo'));
+  navigator.geolocation.getCurrentPosition(p=>res(p.coords),rej,{timeout:10000,maximumAge:600000})})}
+async function hereByGps(){const c=await gps();return {name:await placeName(c.latitude,c.longitude),lat:+c.latitude.toFixed(3),lon:+c.longitude.toFixed(3)}}
+async function hereByIp(){ // no permission prompt: approximate city from the network address
+  const r=await (await fetch('https://get.geojs.io/v1/ip/geo.json')).json();
+  if(!r.latitude) throw new Error('noip');
+  const lat=+(+r.latitude).toFixed(3), lon=+(+r.longitude).toFixed(3);
+  return {name:await placeName(lat,lon),lat,lon};
+}
+let toastT=0;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),msg.length>60?5200:2600)}
+// the page opens again on the new city; what it should say then waits in the tab's memory
+function goCity(w,say){ if(W0&&w.lat===W0.lat&&w.lon===W0.lon){$('city').value=W0.name; return}
+  w={name:cleanName(w.name),lat:w.lat,lon:w.lon}; store.set('place',JSON.stringify(w));
+  try{sessionStorage.setItem('say',say||'Теперь показана погода: '+w.name)}catch(e){}
+  location.replace(location.pathname+'?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon)}
+try{const s=sessionStorage.getItem('say'); if(s){sessionStorage.removeItem('say'); setTimeout(()=>toast(s),400)}}catch(e){}
+const noSearch=q=>toast(sample?'Внутри Claude поиск городов не работает. Откройте tastex.github.io/termograf':'Город «'+q+'» не найден. Проверьте название');
+// suggestions while typing: up to six places with region and country
+let sugg=[], suggSel=-1, suggT=0, suggQ='';
+// none: what the list says when nothing came: 'wide' offers the wider search, 'none' says it found nothing either
+function showSugg(list,none){const ul=$('sugg'); sugg=list; suggSel=-1; ul.textContent='';
+  list.forEach((w,i)=>{const li=document.createElement('li'); li.setAttribute('role','option'); li.id='sg'+i;
+    const b=document.createElement('b'); b.textContent=w.name; li.append(b);
+    if(w.region){const sp=document.createElement('span'); sp.textContent=w.region; li.append(sp)}
+    li.addEventListener('pointerdown',ev=>{ev.preventDefault(); pickSugg(i)}); ul.append(li)});
+  if(!list.length&&none){const li=document.createElement('li'), b=document.createElement('b'), sp=document.createElement('span');
+    li.className=none==='wide'?'wide':'nothing'; b.textContent=none==='wide'?'Поискать в OpenStreetMap':'Такого места не нашли'; sp.textContent=none==='wide'?'В списке сервиса погоды такого места нет':'Проверьте название';
+    li.append(b,sp); if(none==='wide') li.addEventListener('pointerdown',ev=>{ev.preventDefault(); searchWide($('city').value.trim())}); ul.append(li)}
+  const open=!!ul.children.length; ul.hidden=!open; $('city').setAttribute('aria-expanded',String(open));}
+async function searchWide(q){if(q.length<2) return; suggQ=q; let r=[]; try{r=await geocodeWide(q)}catch(e){}
+  if(suggQ===q&&document.activeElement===$('city')) showSugg(r,'none'); return r}
+function hideSugg(){showSugg([])}
+function markSugg(){[...$('sugg').children].forEach((li,i)=>li.setAttribute('aria-selected',String(i===suggSel)));
+  $('city').setAttribute('aria-activedescendant',suggSel>=0?'sg'+suggSel:'')}
+function pickSugg(i){const w=sugg[i]; if(!w) return; hideSugg(); const p={name:w.name,lat:+w.lat.toFixed(3),lon:+w.lon.toFixed(3)};
+  if(vs){vsMode(false); $('city').blur(); pickCmp(p); return}
+  $('city').value=w.name; $('city').blur(); goCity(p)}
+// the button by the city field (where there is one): the field asks for a city to compare with, and pressed again stops comparing
+let vs=false;
+function vsMode(on){vs=on; $('cityForm').classList.toggle('vs',on); $('cityLbl').textContent=on?'Сравнить с':'Город';
+  $('city').placeholder=on?'городом':'Город'; $('city').setAttribute('aria-label',on?'С каким городом сравнить':'Город');
+  if(on){$('city').value=''; $('city').focus()} else if(W0) $('city').value=W0.name}
+if($('cmpBtn')){
+  $('cmpBtn').addEventListener('pointerdown',e=>{if(vs) e.preventDefault()}); // a second tap while choosing does not blur the field first
+  $('cmpBtn').addEventListener('click',()=>{if(vs){hideSugg(); vsMode(false); $('city').blur(); return} if(cmpWant) pickCmp(null); else vsMode(true)});
+}
+$('city').addEventListener('input',()=>{const q=$('city').value.trim(); clearTimeout(suggT);
+  if(q.length<2){hideSugg();return}
+  suggT=setTimeout(async()=>{suggQ=q; let r=[], ok=true; try{r=await geocodeAll(q,6)}catch(e){ok=false} if(suggQ===q&&document.activeElement===$('city')) showSugg(r,ok&&q.length>=3?'wide':null)},250)});
+$('city').addEventListener('keydown',e=>{if($('sugg').hidden) return;
+  if(e.key==='Enter'&&!sugg.length&&$('sugg').querySelector('.wide')&&suggQ===$('city').value.trim()){e.preventDefault(); searchWide(suggQ); return} // nothing in the list: Enter asks wider
+  if(!sugg.length) return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault(); suggSel=(suggSel+(e.key==='ArrowDown'?1:-1)+sugg.length)%sugg.length; markSugg()}
+  else if(e.key==='Enter'&&suggSel>=0){e.preventDefault(); pickSugg(suggSel)}
+  else if(e.key==='Escape'){hideSugg()}});
+$('city').addEventListener('keydown',e=>{if(e.key==='Escape'&&vs&&$('sugg').hidden) $('city').blur()});
+$('city').addEventListener('blur',()=>setTimeout(()=>{hideSugg(); if(vs&&document.activeElement!==$('city')) vsMode(false); else if(!vs&&W0&&document.activeElement!==$('city')&&!$('city').value.trim()) $('city').value=W0.name},150));
+$('city').addEventListener('blur',()=>{setTimeout(()=>window.scrollTo(0,0),50)});
+$('cityForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('city').value.trim();
+  if(sugg[0]&&suggQ===q){pickSugg(0);return} // Enter takes the first suggestion
+  const v=vs; $('city').blur();hideSugg();if(v) vsMode(false);if(!q)return;
+  let w=null; try{w=await geocode(q)}catch(err){}
+  if(!w){try{const r=await geocodeWide(q); if(r[0]) w={name:r[0].name,lat:+r[0].lat.toFixed(3),lon:+r[0].lon.toFixed(3)}}catch(err){}}
+  if(!w){noSearch(q); if(!v&&W0) $('city').value=W0.name; return}
+  if(v) pickCmp(w); else goCity(w)});
+$('locBtn').addEventListener('click',async()=>{const b=$('locBtn');b.classList.add('busy');
+  try{goCity(await hereByGps())}
+  catch(err){
+    // GPS refused or failed: fall back to the city by network and say why
+    const framed=window.top!==window, ios=/iP(hone|ad|od)/.test(navigator.userAgent);
+    const why=framed?'Внутри Claude геопозиция не работает. Откройте tastex.github.io/termograf'
+      :err&&err.code===1?(ios?'Геопозиция выключена для сайтов: Настройки → Конфиденциальность → Службы геолокации → Сайты Safari':'Браузер не разрешил определить место. Разрешите доступ к геопозиции в настройках сайта')
+      :err&&err.code===3?'Не получилось определить место за 10 секунд':'Не получилось определить точное место';
+    let w=null; try{w=await hereByIp()}catch(e){}
+    if(w) goCity(w,why+'. Пока показываем '+w.name+': город определили по интернет‑подключению'); else toast(why+(framed?'':'. Попробуйте ещё раз или введите город'));
+  }
+  b.classList.remove('busy')});
+// back to this page with the browser's Back after a city was picked on another page: open on that city
+addEventListener('pageshow',e=>{ if(!e.persisted||!W0) return;
+  let w=null; try{w=JSON.parse(store.get('place')||'null')}catch(err){}
+  if(w&&isFinite(w.lat)&&(w.lat!==W0.lat||w.lon!==W0.lon)){location.replace(location.pathname+'?city='+encodeURIComponent(w.name)+'&lat='+w.lat+'&lon='+w.lon); return}
+  if(typeof cmpSync==='function') cmpSync()});
 load().then(()=>{if(!fromView) goToday()});
 let loadedAt=Date.now();
 onWake(()=>{ goToday(); if(!sample&&Date.now()-loadedAt>=IDLE){loadedAt=Date.now(); load().then(goToday)} }); // back after seven minutes: today and fresh data
