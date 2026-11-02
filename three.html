@@ -557,7 +557,10 @@ function render(){
     else if(first) label=jan&&yearView?String(dt.getUTCFullYear()):MON[dt.getUTCMonth()]; else if(ppd>=18||(ppd>=6&&mon)) label=String(dt.getUTCDate());
     if(!label) continue;
     g.font=(first?'600 ':'400 ')+'11px '+FONT; g.fillStyle=first?C.fg:i===todayI?C.ink:C.muted;
-    const w=g.measureText(label).width, lx=first&&Rs===1?snapPx(X(i))+3:X(i)-w/2; if(lx<lastL+4) continue; g.fillText(label,lx,14); lastL=lx+w}
+    // in the day views the month name sits centred on its line like a day number; a neighbouring day number that would run into it gives way
+    const w=g.measureText(label).width, mw=k=>{const d=days[k]; if(yearView||Rs>1||!d||new Date(d.k).getUTCDate()!==1) return 0; g.font='600 11px '+FONT; const r=g.measureText(MON[new Date(d.k).getUTCMonth()]).width; g.font='400 11px '+FONT; return r};
+    if(!first&&Math.max(mw(i-1),mw(i+1))/2+w/2+4>ppd) continue;
+    const lx=first&&yearView?snapPx(X(i))+3:X(i)-w/2; if(lx<lastL+4) continue; g.fillText(label,lx,14); lastL=lx+w}
   // bands
   const rc=vc*Rd+(Rd-1)/2; // the cursor, counted in readings
   bands.forEach(B=>{const {j,yb,bh,Y,col,mn,mx,step}=B;
