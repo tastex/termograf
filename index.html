@@ -268,7 +268,7 @@ const MONO='"Golos Text",system-ui,sans-serif'; // chart labels use the text fac
 let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
 const Q=H/4; // quarter hour
 let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
-let warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
+let stepTw=null, warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
 // the moment and the scale on screen, shared by the three pages, so switching between them keeps both:
@@ -790,9 +790,14 @@ function render(){
     const h=D.t[idxAt(t)]; return nq!=null&&Math.abs(t-nq)<=Math.abs(t-h)?nq:h};
   snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
   const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
-  // zoomed in by a slow drag, the chart follows the finger exactly (hour labels keep their place under it) and snaps on release
-  const want=spd>3||drag&&fz>0?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4) vc=want; else vc+=(want-vc)*(spd>3||drag&&fz>0?0.6:0.35);
+  // dragged slowly, the chart steps reading by reading. Zoomed in, each step is its own quick ease-out tween: the hour ticks
+  // snap to the cursor like a magnet, without a slow creeping tail and without a jump. Its length follows the step:
+  // 150 ms for a long hourly step, down to 60 ms for a short 15-minute one, so a short step never lags behind the finger
+  const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4){vc=want;stepTw=null}
+  else if(fine&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={from:vc,to:want,t:nowT,ms:Math.min(150,Math.max(60,Math.abs(want-vc)/H*pph*2.2))};
+    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=k>=1?want:stepTw.from+(want-stepTw.from)*(1-Math.pow(1-k,3))}
+  else {stepTw=null; vc+=(want-vc)*(spd>3?0.6:0.35)}
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right,
@@ -991,7 +996,8 @@ function render(){
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   if(swap){g.save();g.globalAlpha=1-swap.e;g.drawImage(swap.img,0,0,W,Ht);g.restore()} // the previous mode fades out
   // center cursor
-  const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
+  const rd=stepTw?stepTw.to:vc; // the reading being stepped to: the numbers switch to it at once, only the chart glides
+  const ci=idxAt(rd), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
   const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
   { // the cursor too passes behind the labels: its line is broken where one stands
@@ -999,7 +1005,7 @@ function render(){
     for(const r of cut){if(r.y>y){g.moveTo(cx,y);g.lineTo(cx,Math.min(r.y,bot))} y=Math.max(y,r.y+r.h)} if(y<bot){g.moveTo(cx,y);g.lineTo(cx,bot)} g.stroke()} // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
-  const tq=!yr&&(fine&&inQ(vc)||vc===nq)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
+  const tq=!yr&&(fine&&inQ(rd)||rd===nq)?D.q.t0+qIdx(rd)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
   readout(ci,yr,tq); drawOv(C);
   // the header with the neighbours on the right for every loaded reading; a year still loading keeps the plain one, which says so
   const loaded=!inHole(D.t[ci])&&!!dayRec(D.t[ci])&&D.temp[ci]===D.temp[ci];
