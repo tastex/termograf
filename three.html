@@ -45,7 +45,7 @@
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --hot:#ff8a66; --cold:#6cb8ff; --warn:#f2c46b; --warn-bg:#2d2412;
   --c-m:#5bb3e6; --c-d:#ff8a66; --c-e:#a891ff; color-scheme:dark}
 html,body{height:100%}
-html{box-sizing:border-box}
+html{box-sizing:border-box;-webkit-text-size-adjust:100%;text-size-adjust:100%} /* iPhone in landscape does not enlarge some of the text on its own */
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}

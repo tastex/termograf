@@ -29,7 +29,7 @@
 /* Layout: one screen — readout on top, draggable thermograph ribbon fills the middle, 3‑month overview strip as a scrubber below */
 :root{
   --paper:#f3f5f7; --paper-2:#e6ebef; --grid:#c9d3dc; --grid-strong:#9fb0bf;
-  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13); --rain:#2f86b8;
+  --ink:#5b3fc4; --ink-soft:rgba(91,63,196,.13); --rain:#2f86b8; --snow:#7b8fa8;
   --fg:#1d2430; --muted:#5f6b7a; --future:rgba(29,36,48,.045); --night:rgba(44,62,104,.06); --hot:#c2482a; --cold:#1f74b5; --pin:#b07400; --cmp:#0b8670; --warn:#8a5a00; --warn-bg:#fff3d6;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -37,42 +37,72 @@
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
-  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
+  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6; --snow:#c4c0f0;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}}
 :root[data-theme="dark"]{
   --paper:#12161d; --paper-2:#1a2029; --grid:#262e3a; --grid-strong:#3a4554;
-  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6;
+  --ink:#a891ff; --ink-soft:rgba(168,145,255,.16); --rain:#5bb3e6; --snow:#c4c0f0;
   --fg:#e7ebf1; --muted:#8e99a8; --future:rgba(255,255,255,.035); --night:rgba(0,0,0,.22); --hot:#ff8a66; --cold:#6cb8ff; --pin:#f2b84b; --cmp:#4fd1b0; --warn:#f2c46b; --warn-bg:#2d2412; color-scheme:dark}
 html,body{height:100%}
-html{box-sizing:border-box} /* the safe-area padding on the root stays inside the screen height (home-screen app on iPhone) */
+html{box-sizing:border-box;-webkit-text-size-adjust:100%;text-size-adjust:100%} /* iPhone in landscape doesn't enlarge some of the text on its own */ /* the safe-area padding on the root stays inside the screen height (home-screen app on iPhone) */
 body{background:var(--paper);color:var(--fg);font-family:var(--f-body);overflow:hidden}
 .app{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;max-width:1100px;margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
 .brand{flex:none;margin-top:-6px;text-align:center;font:700 11px/12px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--fg)} /* text logo just below the top safe area: real capitals in the bold digits' font and colour (synthesised small caps came out thin and grey) */
 /* header: one fixed grid shared by the usual reading and the today view, so nothing moves when they swap */
-.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 42px 22px 26px 20px;row-gap:3px;column-gap:12px;
-  grid-template-areas:"temp tag" "temp sub" "date date" "l1 l1" "l2 l2"}
+.hgrid{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:22px 42px 22px 20px 26px 20px;row-gap:3px;column-gap:12px;
+  grid-template-areas:"temp tag" "temp sub" "date date" "wx wx" "l1 l1" "l2 l2"}
 header{position:relative}
 .temp{grid-area:temp;align-self:start;height:64px;font:700 64px/64px var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
-.tag,.cond,.tri-pair{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag,.cond{justify-self:end;text-align:right;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .when{grid-area:date;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tag{grid-area:tag;align-self:center;font:500 16px/22px var(--f-body);color:var(--ink)}
+.tag{grid-area:tag;align-self:center;font:500 16px/22px var(--f-body);font-variant-numeric:tabular-nums;color:var(--ink)} /* digits of one width: the time and dates beside it don't twitch while dragging */
 .cond{grid-area:sub;align-self:start;font:400 13px/18px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums}
 .delta{grid-area:l1;display:flex;align-items:center;gap:8px;font:400 13px/26px var(--f-body);color:var(--muted);white-space:nowrap;min-width:0}
 .delta b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
 .delta button{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:24px;height:24px;display:grid;place-items:center;font:500 16px/1 var(--f-body);color:var(--pin);background:transparent;border:1px solid var(--pin);border-radius:50%;padding:0;cursor:pointer}
-.verdict{grid-area:l2;font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.verdict{grid-area:l2;font:500 16px/20px var(--f-body);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .verdict.warm{color:var(--hot)}.verdict.cool{color:var(--cold)}
 .hdr{transition:opacity .18s ease}
 header.now .hdr{opacity:0;visibility:hidden}
 .trio{position:absolute;inset:0;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .18s ease}
 header.now .trio{opacity:1;visibility:visible}
-.tri-pair{grid-area:sub;align-self:start;display:flex;gap:18px}
-.tri-pair>div{display:flex;flex-direction:column;align-items:flex-end}
-.tri-pair small{font:400 13px/16px var(--f-body);color:var(--muted)}
-.tri-pair b{font:700 22px/26px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums}
-.tri-say{font:500 16px/20px var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#triSay1{grid-area:l1;line-height:26px}#triSay2{grid-area:l2}
+/* today: on the top line what and when, across the whole width; the big number, and today's rain or snow and wind in one line under it;
+   on the right the day before and the day after: heading, number, rain and wind, standing on the line of today's icons.
+   Their columns have a fixed width, so they never move while the chart is dragged: on a phone at the right edge,
+   on a wide screen near the big number, its column as wide as the widest number the mode can show (--nw) */
+.trio{display:grid;grid-template-columns:auto minmax(12px,1fr) 86px 86px;grid-template-rows:22px 64px 20px 29px 20px;row-gap:3px;column-gap:20px}
+.trio>*{min-width:0}
+.trio .tag{grid-row:1;grid-column:1/-1;justify-self:stretch;text-align:left;width:0;min-width:100%} /* takes the room it is given, never widens the columns */
+#triN{grid-row:2;grid-column:1}
+#triNd{grid-row:3;grid-column:1/3;flex-direction:row;gap:10px;margin-top:-4px}
+.tcol{grid-row:1/4;align-self:end;margin-bottom:3.5px;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
+.ty{grid-column:3;position:relative;left:12px}.tt{grid-column:4} /* the day before stands closer to the day after: one pair */
+.trio.one .ty{left:0}
+.tl{display:flex;align-items:center;gap:6px;max-width:100%;font:500 16px/17px var(--f-body);font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap}
+.tl span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tl.pin{color:var(--pin)}.tl.cmp{color:var(--cmp)}
+.tl .x{box-sizing:border-box;flex:none;-webkit-appearance:none;appearance:none;width:17px;height:17px;display:grid;place-items:center;font:500 14px/1 var(--f-body);color:inherit;background:transparent;border:1px solid currentColor;border-radius:50%;padding:0;cursor:pointer}
+.tl .x[hidden]{display:none}
+/* the pin or the compared city: one column on the right, as wide as the two */
+.trio.one .tt{display:none}.trio.one .ty{grid-column:3/5}
+.tn{font:700 28px/32px var(--f-display);letter-spacing:-.02em;color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:-1px}
+.wxc{display:flex;flex-direction:column;min-width:0;max-width:100%}
+/* yesterday's and tomorrow's rain and wind as a little table: icons under each other, then the word, then the number by its digits, then the unit */
+.wxt{align-self:stretch;display:grid;justify-content:end;grid-template-columns:18px auto auto auto auto;column-gap:0;align-items:center;margin-top:-1px;
+  font:400 13px/17px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wxt.short{grid-template-columns:18px auto auto auto}
+.wxt .r{display:contents}.wxt svg{width:14px;height:14px;display:block}
+.wxt .w{padding-right:4px}.wxt .n{text-align:right}.wxt .u{padding-left:4px}.wxt .all{grid-column:2/-1}
+.wxt .rain{color:var(--rain)}.wxt .snow{color:var(--snow)}.wxt .strong{color:var(--hot);font-weight:500}
+.wx{display:flex;align-items:center;gap:4px;max-width:100%;font:400 13px/19px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wx svg{flex:none;width:14px;height:14px}
+.wx span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.wx.rain{color:var(--rain)}.wx.snow{color:var(--snow)}.wx.strong{color:var(--hot);font-weight:500}
+#dayWx{grid-area:wx;flex-direction:row;gap:14px}
+@media (min-width:560px){.trio{grid-template-columns:var(--nw,auto) 16px 128px 128px minmax(0,1fr)}.ty{left:8px}}
+.tri-say{font:500 16px/20px var(--f-body);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#triSay1{grid-row:4;grid-column:1/-1;line-height:26px;align-self:end}#triSay2{grid-row:5;grid-column:1/-1}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
@@ -178,13 +208,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
     <div class="when hdr" id="when">Загружаем погоду…</div>
     <div class="tag hdr" id="tag">&nbsp;</div>
     <div class="cond hdr" id="cond">&nbsp;</div>
+    <div class="wxc hdr" id="dayWx"><span class="wx p"></span><span class="wx w"></span></div>
     <div class="delta hdr" id="delta">&nbsp;</div>
     <div class="verdict hdr" id="verdict">&nbsp;</div>
-    <div class="trio hgrid" id="trio" aria-live="polite">
-      <div class="temp" id="triN">—</div>
-      <div class="when" id="triWhen">&nbsp;</div>
+    <div class="trio" id="trio" aria-live="polite">
       <div class="tag" id="triTop">&nbsp;</div>
-      <div class="tri-pair"><div><small>Вчера</small><b id="triY">—</b></div><div><small>Завтра</small><b id="triT">—</b></div></div>
+      <div class="temp" id="triN">—</div>
+      <div class="wxc" id="triNd"><span class="wx p"></span><span class="wx w"></span></div>
+      <div class="tcol ty" id="triYd"><div class="tl"><span>Вчера</span><button type="button" class="x" hidden>×</button></div><b class="tn" id="triY">—</b><div class="wxt"></div></div>
+      <div class="tcol tt" id="triTd"><div class="tl"><span>Завтра</span><button type="button" class="x" hidden>×</button></div><b class="tn" id="triT">—</b><div class="wxt"></div></div>
       <div class="tri-say" id="triSay1">&nbsp;</div>
       <div class="tri-say" id="triSay2">&nbsp;</div>
     </div>
@@ -489,12 +521,15 @@ async function loadQ(where){
     setQ(t0,qs,rain,code); return;
   }
 }
+// A place's name without the kind of place in front: «город Тверь», «г. Тверь», «посёлок …» are just «Тверь»
+const KIND=/^(город|г\.|городской округ|городское поселение|посёлок городского типа|поселок городского типа|рабочий посёлок|рабочий поселок|пгт\.?|посёлок|поселок|село|деревня|станица|аул)\s+/i;
+function cleanName(n){const c=String(n||'').trim().replace(KIND,'').replace(/\s+(городской округ|муниципальный округ)$/i,'').trim(); return c||String(n||'')}
 // The city to compare with: its forecast from three months back to sixteen days ahead (no archive), by its own local clock,
 // so 15:00 here is set against 15:00 there. It is drawn as a second line, and the header says how it differs from here
 let CMP=null, cmpWant=null; try{const c=JSON.parse(store.get('cmp')||'null'); if(c&&isFinite(c.lat)&&isFinite(c.lon)){c.name=cleanName(c.name); cmpWant=c}}catch(e){}
 async function loadCmp(w){
   try{const j=await cachedJ(fullUrl(w),15*60e3); if(!j||!j.hourly) throw omErr('net'); if(cmpWant!==w) return;
-    const o=parse(j,w.lat); CMP={where:w,t0:o.t[0],n:o.t.length,s:o.s}; draw()}
+    const o=parse(j,w.lat); CMP={where:w,t0:o.t[0],n:o.t.length,s:o.s,rain:o.rain,code:o.code}; draw()}
   catch(e){ if(cmpWant!==w||CMP) return; const lim=e&&LIMIT_WAIT[e.kind];
     toast(lim?`Погода в городе ${w.name} не загрузилась: сервис погоды ограничил число запросов. Обновите страницу позже`:`Погода в городе ${w.name} не загрузилась. Проверьте интернет и обновите страницу`)}
 }
@@ -511,9 +546,6 @@ function cmpDay(d){if(!CMP) return null; const a=CMP.s[metric], i0=Math.round((d
   for(let i=Math.max(0,i0);i<Math.min(CMP.n,i0+24);i++) if(a[i]!=null){s+=a[i];n++} return n>=20?s/n:null}
 const cmpVal=(t,yr)=>yr?cmpDay(t):cmpAt(t);
 // "на 4° холоднее" — how much and which way, or null when the difference is too small to notice
-// A place's name without the kind of place in front: «город Тверь», «г. Тверь», «посёлок …» are just «Тверь»
-const KIND=/^(город|г\.|городской округ|городское поселение|посёлок городского типа|поселок городского типа|рабочий посёлок|рабочий поселок|пгт\.?|посёлок|поселок|село|деревня|станица|аул)\s+/i;
-function cleanName(n){const c=String(n||'').trim().replace(KIND,'').replace(/\s+(городской округ|муниципальный округ)$/i,'').trim(); return c||String(n||'')}
 // «в Москве», «во Владимире», «в Нижнем Новгороде»: where, with the name declined the usual way. Names that do not decline,
 // or that these rules cannot place, stay as they are («в Сочи», «в Иваново»)
 const NODECL=new Set(['сочи','тбилиси','хельсинки','дели','бали','майами','баку','чикаго','торонто','осло','монако','кале','гоа','перу','алматы']);
@@ -549,7 +581,9 @@ function inCity(name){
 const prep=w=>/^[вф][бвгджзйклмнпрстфхцчшщ]/i.test(w)?'во':'в';
 const capF=t=>t[0].toUpperCase()+t.slice(1);
 // the text that fits on its line: the fullest of the variants that does not run past the edge
-function fitText(el,variants){for(const t of variants){el.textContent=t; if(el.scrollWidth<=el.clientWidth+1) return}}
+// the first wording that fits the element's width, measured to the fraction of a pixel (scrollWidth rounds, and a text half a pixel
+// too wide still ends in an ellipsis)
+function fitText(el,variants){const r=document.createRange(); for(const t of variants){el.textContent=t; r.selectNodeContents(el); if(r.getBoundingClientRect().width<=el.getBoundingClientRect().width+.01) return}}
 function byHow(d){const m=M(); return Math.abs(d)<m.th[0]?null:`на ${m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit} ${d>0?m.more:m.less}`}
 const inQ=t=>D.q&&t>=D.q.t0&&t<=D.q.end, qIdx=t=>Math.max(0,Math.min(D.q.n-1,Math.round((t-D.q.t0)/Q)));
 async function geocodeAll(name,count){
@@ -596,20 +630,27 @@ function reach(t){
   applyView(); applyPin(); draw();
 }
 const iso=ms=>new Date(ms).toISOString().slice(0,10);
+// a day's record: the shown series' range and mean, and, whatever is shown, its rain and snow (mm of water), strongest wind and gust, thunder
+const newDay=(k,v)=>({k,hi:v,lo:v,sum:0,n:0,r:0,sn:0,w:0,g:0,th:false});
+// snow by the weather code; where the code is missing, by the temperature
+const SNOWC=new Set([71,73,75,77,85,86]), isSnow=(c,t)=>c===c&&c!=null?SNOWC.has(c):t<=0.5;
+function addHour(d,i,v){const r=D.rain[i]||0, c=D.code[i], w=D.s.wind[i], g=D.s.gust[i];
+  if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=r; if(r>0&&isSnow(c,D.s.temp[i])) d.sn+=r;
+  if(w>d.w)d.w=w; if(g>d.g)d.g=g; if(c>=95) d.th=true}
 function rebuildDays(){ // one record per day, so wide views and the overview never walk every hour while scrolling
   const d0=dayOf(D.t[0]), n=Math.round((dayOf(D.t[D.t.length-1])-d0)/DAY)+1, days=new Array(n);
   let gl=1e9,gh=-1e9;
   for(let i=0;i<D.t.length;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i];if(v!==v)continue;let d=days[j]; // NaN: a year not loaded yet
-    if(!d)d=days[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
-    if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
-  D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey='';
+    if(!d)d=days[j]=newDay(d0+j*DAY,v);
+    addHour(d,i,v); if(v<gl)gl=v; if(v>gh)gh=v}
+  D.d0=d0; D.days=days; D.gl=gl; D.gh=gh; ovKey=''; D.dv=(D.dv||0)+1;
 }
 function prependDays(cut){ // the days of the hours just put in front; the days already there are kept as they are
   const d0=dayOf(D.t[0]), n=Math.round((D.d0-d0)/DAY), add=new Array(Math.max(0,n)); let gl=D.gl,gh=D.gh;
   for(let i=0;i<cut;i++){const j=Math.round((dayOf(D.t[i])-d0)/DAY),v=D.temp[i]; if(v!==v) continue; let d=j<n?add[j]:D.days[j-n];
-    if(!d)d=add[j]={k:d0+j*DAY,hi:v,lo:v,sum:0,n:0,r:0};
-    if(v>d.hi)d.hi=v; if(v<d.lo)d.lo=v; d.sum+=v; d.n++; d.r+=D.rain[i]; if(v<gl)gl=v; if(v>gh)gh=v}
-  D.d0=d0; D.days=add.concat(D.days); D.gl=gl; D.gh=gh; ovKey='';
+    if(!d)d=add[j]=newDay(d0+j*DAY,v);
+    addHour(d,i,v); if(v<gl)gl=v; if(v>gh)gh=v}
+  D.d0=d0; D.days=add.concat(D.days); D.gl=gl; D.gh=gh; ovKey=''; D.dv++;
 }
 // Older hours go in front, a year at a time, for as long as someone scrolls back (eighty years are seven hundred thousand hours).
 // Each series lives at the end of a bigger buffer with free room before it, so a year of archive copies only that year,
@@ -696,7 +737,6 @@ function curveAt(t,start,step,val,n){
   const a=val(k-1), b=val(k+1), m0=a==null||k===0?v:(a+v)/2, m1=b==null||k===n-1?v:(v+b)/2;
   return (1-u)*(1-u)*m0+2*u*(1-u)*v+u*u*m1;
 }
-function tagText(g,txt,x,y,fg,bg){const w=g.measureText(txt).width;g.fillStyle=bg;g.globalAlpha=.88;g.fillRect(x-2,y-8,w+4,15);g.globalAlpha=1;g.fillStyle=fg;g.fillText(txt,x,y)}
 
 function yTarget(){ // range of the visible window plus one window on each side, so the scale moves rarely
   let lo=1e9,hi=-1e9; for(const d of dayRange(center-spanV*H*1.5,Math.min(D.fut,center+spanV*H*1.5))){if(d.lo<lo)lo=d.lo;if(d.hi>hi)hi=d.hi}
@@ -723,10 +763,18 @@ function fadeOld(from){ // older data that just arrived fades in instead of popp
 }
 function draw(){ if(!D||drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;
   fillHole(); if(center-Math.max(spanV*H,14*DAY)<D.t[0]) extendBack(); easeY(); render()}); }
+// Lines (grid, the curves, the vertical marks) are drawn on a layer of their own; where a label or the sun and moon stand, the
+// layer is cut out before it goes onto the chart. So the labels need no background and nothing crosses them
+const lineC=document.createElement('canvas');
 function render(){
   if(!D) return;
-  const [g,W,Ht]=fit(chart);
-  const C={};['grid','grid-strong','ink','ink-soft','rain','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
+  const [g,W,Ht]=fit(chart), dpr=devicePixelRatio||1;
+  if(lineC.width!==chart.width||lineC.height!==chart.height){lineC.width=chart.width;lineC.height=chart.height}
+  const gl=lineC.getContext('2d'); gl.setTransform(1,0,0,1,0,0); gl.clearRect(0,0,lineC.width,lineC.height); gl.setTransform(dpr,0,0,dpr,0,0);
+  const labs=[], icons=[], dots=[]; // drawn on top at the end
+  const lab=(txt,x,y,fg,font,base='middle')=>{g.font=font; const w=g.measureText(txt).width, r=base==='middle'?{x:x-2,y:y-8,w:w+4,h:16}:{x:x-2,y:y-11,w:w+4,h:15};
+    const o={txt,x,y,fg,font,base,w,r}; labs.push(o); return o};
+  const C={};['grid','grid-strong','ink','ink-soft','rain','snow','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
   // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. Both ease in and out
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
   if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
@@ -763,14 +811,15 @@ function render(){
     if(r>a)g.fillRect(a,36,r-a,bot-36); if(b>st)g.fillRect(st,36,b-st,bot-36);}
   // sun / moon marks in the middle of each day and night
   {const d=dayOf(D.now),s=D.sun[d],n=D.sun[d+DAY]; if(s){ // only for the current day and the night after it
-    if(X(s[1])-X(s[0])>=20) sunIcon(g,X((s[0]+s[1])/2),48,C.muted);
-    const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) moonIcon(g,X((s[1]+ne)/2),48,C.muted);}}
+    if(X(s[1])-X(s[0])>=20) icons.push({f:sunIcon,x:X((s[0]+s[1])/2),y:48});
+    const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) icons.push({f:moonIcon,x:X((s[1]+ne)/2),y:48});}}
+  icons.forEach(i=>i.r={x:i.x-9,y:i.y-9,w:18,h:18});
   // future
   const xn=X(nowAt), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
   // horizontal grid
-  g.lineWidth=1;
+  gl.lineWidth=1;
   const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
-  for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;g.strokeStyle=v===0?C['grid-strong']:C.grid;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+  for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;gl.strokeStyle=v===0?C['grid-strong']:C.grid;gl.beginPath();gl.moveTo(0,y);gl.lineTo(W,y);gl.stroke()}
   // hour ticks + midnight lines
   const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
@@ -778,7 +827,7 @@ function render(){
     const x=snapPx(X(ms)), mid=new Date(ms).getUTCHours()===0;
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
-    if(mid){g.strokeStyle=C.grid;g.beginPath();g.moveTo(x,0);g.lineTo(x,bot);g.stroke()}
+    if(mid){gl.strokeStyle=C.grid;gl.lineWidth=1;gl.beginPath();gl.moveTo(x,0);gl.lineTo(x,bot);gl.stroke()}
     else if(pph>=6){g.strokeStyle=C['grid-strong'];g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
   }
   // day labels: sticky to the left edge of each visible day, two lines
@@ -807,14 +856,15 @@ function render(){
       cur=nx}}
   // rain bars
   const iEnd=idxAt(D.fut-H), i0=Math.max(0,idxAt(t0)-2), i1=Math.min(iEnd,idxAt(t1)+2);
-  g.fillStyle=C.rain; g.globalAlpha=.55;
+  g.globalAlpha=.55; // snow in its own colour; in the year view the snow part of a day sits at the bottom of its bar
   const days=yr?dayRange(t0-DAY,Math.min(t1,D.fut-H)):[]; if(yr){
-    days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH);g.fillRect(X(d.k),Ht-4-h,Math.max(1,dayW-.3),h)}})}
-  else{ if(fine){const q=D.q, w=pph/4; for(let k=qIdx(t0-H);k<=qIdx(t1+H);k++){const r=q.rain[k];if(r>0){const h=Math.max(1.5,Math.min(1,r/0.75)*rainH);g.fillRect(X(q.t0+k*Q)-w/2+.5,Ht-4-h,Math.max(1,w-1),h)}}}
-  for(let i=i0;i<=i1;i++){if(fine&&inQ(D.t[i]))continue;const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}}
+    days.forEach(d=>{if(d.r>0){const h=Math.max(1,Math.min(1,d.r/20)*rainH), hs=h*d.sn/d.r, x=X(d.k), w=Math.max(1,dayW-.3);
+      g.fillStyle=C.rain;g.fillRect(x,Ht-4-h,w,h-hs); g.fillStyle=C.snow;g.fillRect(x,Ht-4-hs,w,hs)}})}
+  else{ if(fine){const q=D.q, w=pph/4; for(let k=qIdx(t0-H);k<=qIdx(t1+H);k++){const r=q.rain[k];if(r>0){const h=Math.max(1.5,Math.min(1,r/0.75)*rainH);g.fillStyle=isSnow(q.code[k],q.s.temp[k])?C.snow:C.rain;g.fillRect(X(q.t0+k*Q)-w/2+.5,Ht-4-h,Math.max(1,w-1),h)}}}
+  for(let i=i0;i<=i1;i++){if(fine&&inQ(D.t[i]))continue;const r=D.rain[i];if(r>0){const h=Math.max(1.5,Math.min(1,r/3)*rainH);g.fillStyle=isSnow(D.code[i],D.s.temp[i])?C.snow:C.rain;g.fillRect(X(D.t[i])-Math.max(.5,pph/2-.5),Ht-4-h,Math.max(1,pph-1),h)}}}
   g.globalAlpha=1;
   // pinned reference line
-  if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;g.strokeStyle=C.pin;g.lineWidth=1;g.setLineDash([3,4]);g.beginPath();g.moveTo(0,py);g.lineTo(W,py);g.stroke();g.setLineDash([])}
+  if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;gl.strokeStyle=C.pin;gl.lineWidth=1;gl.setLineDash([3,4]);gl.beginPath();gl.moveTo(0,py);gl.lineTo(W,py);gl.stroke();gl.setLineDash([])}
   // temperature trace
   // the line breaks where a year is not loaded yet (no days there, NaN hours) and where a new week springs in
   const segs=[]; let seg=null, segW=0; const add=(p,w=0)=>{if(p[1]!==p[1]){seg=null;return} if(!seg||segW!==w){segs.push(seg=[]);segW=w} seg.push(p)};
@@ -827,29 +877,26 @@ function render(){
     for(let i=i0;i<=i1;i++){const t=D.t[i];
       if(fine&&inQ(t)){ if(!qDone){qDone=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) add([X(q.t0+k*Q),Y(q.temp[k])])} continue }
       add([X(t),Y(D.temp[i])],warp&&t>=warp.from?1:0)}}
-  const path=pts=>{g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;g.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];g.lineTo(L[0],L[1])};
+  const path=(pts,c=g)=>{c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;c.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];c.lineTo(L[0],L[1])};
   segs.forEach(pts=>{ if(pts.length<2) return;
     if(!yr){path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill()}
-    g.save();g.beginPath();g.rect(0,0,Math.max(0,xn),Ht);g.clip();path(pts);g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore();
-    if(xn<W){g.save();g.beginPath();g.rect(Math.max(0,xn),0,W,Ht);g.clip();path(pts);g.globalAlpha=.45;g.strokeStyle=C.ink;g.lineWidth=2.2;g.lineJoin='round';g.stroke();g.restore()}
+    gl.save();gl.beginPath();gl.rect(0,0,Math.max(0,xn),Ht);gl.clip();path(pts,gl);gl.strokeStyle=C.ink;gl.lineWidth=2.2;gl.lineJoin='round';gl.stroke();gl.restore();
+    if(xn<W){gl.save();gl.beginPath();gl.rect(Math.max(0,xn),0,W,Ht);gl.clip();path(pts,gl);gl.globalAlpha=.45;gl.strokeStyle=C.ink;gl.lineWidth=2.2;gl.lineJoin='round';gl.stroke();gl.restore()}
   });
   // the compared city: a second solid line in its own colour
-  let cityTags=[];
+  let cityTags=[], cmpPts=[];
   if(CMP){const cs=[]; let cur=null; const put=(x,v)=>{if(v==null){cur=null;return} if(!cur) cs.push(cur=[]); cur.push([x,Y(v)])};
     if(yr) for(let d=dayOf(t0)-DAY;d<=t1+DAY&&d<D.fut;d+=DAY) put(X(d+12*H),cmpDay(d));
     else for(let t=Math.floor(t0/H)*H-H;t<=t1+H&&t<D.fut;t+=H) put(X(t),cmpAt(t));
-    const xc=Math.max(0,xn), cl=(a,b,al)=>{g.save();g.beginPath();g.rect(a,0,b-a,Ht);g.clip();g.globalAlpha=al;g.strokeStyle=C.cmp;g.lineJoin='round';g.lineWidth=pph>=3?2:1.5;
-      cs.forEach(pts=>{if(pts.length>1){path(pts);g.stroke()}});g.restore()};
-    cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
+    const xc=Math.max(0,xn), cl=(a,b,al)=>{gl.save();gl.beginPath();gl.rect(a,0,b-a,Ht);gl.clip();gl.globalAlpha=al;gl.strokeStyle=C.cmp;gl.lineJoin='round';gl.lineWidth=pph>=3?2:1.5;
+      cs.forEach(pts=>{if(pts.length>1){path(pts,gl);gl.stroke()}});gl.restore()};
+    cmpPts=cs; cl(0,xc,1); if(xn<W) cl(xc,W,.55); // like the main line: solid, paler in the forecast
     // both cities are named at the right end of their lines; where exactly is settled with the extremes' labels below
     const end=ss=>{let lp=null; ss.forEach(pts=>pts.forEach(p=>{if(p[0]<=W-6&&(!lp||p[0]>lp[0]))lp=p})); return lp&&lp[0]>W*.4?lp:null};
     g.font='600 11px '+MONO;g.textBaseline='middle';
     const tags=[[end(cs),CMP.where.name,C.cmp],[D.where?end(segs):null,D.where?.name,C.ink]].filter(t=>t[0]).map(([lp,nm,c])=>{const w=g.measureText(nm).width, by=lp[0]+w+10<=W;
       return {x:by?lp[0]+6:W-w-4, y:by?lp[1]:lp[1]-14, w, nm, c}});
     cityTags=tags}
-  // y labels
-  g.textBaseline='middle';g.font='500 11px '+MONO;
-  for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v);if(y<top-2)continue;tagText(g,fmtS(v),2,y,C.muted,C.paper)}
   // extremes: per day when there is room, otherwise for the whole visible window. They are looked for in the readings
   // the line is drawn through (every 15 minutes where those are shown), and the dots sit on the smoothed line itself
   const sm=[]; {let qd=!fine||!D.q; for(let i=i0;i<=i1;i++){const t=D.t[i];
@@ -858,10 +905,20 @@ function render(){
   const ext=[], pick=(a,b)=>{let mx=null,mn=null; for(const p of sm){if(p[0]<a||p[0]>=b)continue; if(!mx||p[1]>mx[1])mx=p; if(!mn||p[1]<mn[1])mn=p}
     if(mx){if(X(mx[0])>=0&&X(mx[0])<=W)ext.push([mx,1]); if(X(mn[0])>=0&&X(mn[0])<=W)ext.push([mn,-1])}};
   if(dayW>=40){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
-  g.font='600 11px '+MONO;g.textBaseline='middle';
+  const EF='600 11px '+MONO; g.font=EF;
   const onLine=t=>yr?null:fine&&inQ(t)?curveAt(t,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
+  const meets=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
   const exL=ext.map(([[t,v],s])=>{const x=X(t),y=Y(onLine(t)??v),c=s>0?C.hot:C.cold,txt=fmtS(v),w=g.measureText(txt).width;
-    return {x,y,c,txt,tx:Math.min(W-w-3,Math.max(3,x-w/2)),ty:s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13),w}});
+    let tx=Math.min(W-w-3,Math.max(3,x-w/2)); let ty=s>0?Math.max(top-2,y-12):Math.min(bot-8,y+13);
+    // a high number never covers the sun or the moon: it steps aside, still above its dot
+    for(const i of icons){const r={x:tx-2,y:ty-8,w:w+4,h:16}; if(!meets(r,i.r)) continue;
+      const l=i.r.x-w-3, rr=i.r.x+i.r.w+3; tx=(Math.abs(l-tx)<=Math.abs(rr-tx)&&l>=3)||rr+w>W-3?l:rr}
+    return {x,y,c,txt,tx,ty,w,s}});
+  { // two numbers that would touch: the second moves one line further from its dot, or keeps only its dot
+    const box=e=>({x:e.tx-3,y:e.ty-8,w:e.w+6,h:16}), done=[];
+    exL.slice().sort((a,b)=>a.tx-b.tx).forEach(e=>{
+      if(done.some(d=>meets(box(e),box(d)))){const ty=e.ty+(e.s>0?-14:14); if(ty>=top-2&&ty<=bot-8&&!done.some(d=>meets(box({...e,ty}),box(d)))) e.ty=ty; else {e.txt=null; return}}
+      done.push(e)})}
   // the city names step up or down off the extremes' labels and each other; with no free place left, the extreme's number gives way (its dot stays)
   const hit=(a,b)=>a.x<b.x+b.w+6&&b.x<a.x+a.w+6&&Math.abs(a.y-b.y)<15, placed=[];
   cityTags.forEach(t=>{const y0=t.y; let ok=false;
@@ -869,15 +926,27 @@ function render(){
       if(!placed.some(p=>hit(t,p))&&!exL.some(e=>hit(t,{x:e.tx,y:e.ty,w:e.w}))){ok=true;break}}
     if(!ok){t.y=Math.max(top,Math.min(bot-10,y0)); exL.forEach(e=>{if(hit(t,{x:e.tx,y:e.ty,w:e.w})) e.txt=null})}
     placed.push(t)});
-  exL.forEach(e=>{g.beginPath();g.arc(e.x,e.y,3,0,7);g.fillStyle=e.c;g.fill(); if(e.txt) tagText(g,e.txt,e.tx,e.ty,e.c,C.paper)});
-  g.font='600 11px '+MONO; placed.forEach(t=>tagText(g,t.nm,t.x,t.y,t.c,C.paper));
-  // now marker
-  if(xn>=0&&xn<=W){g.strokeStyle=C.fg;g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(snapPx(xn),top-8);g.lineTo(snapPx(xn),bot);g.stroke();g.setLineDash([]);
-    g.textBaseline='alphabetic';g.font='500 11px '+MONO;tagText(g,'сейчас',Math.min(xn+4,W-44),bot-6,C.fg,C.paper)}
+  exL.forEach(e=>{dots.push(e); if(e.txt) lab(e.txt,e.tx,e.ty,e.c,EF)});
+  placed.forEach(t=>lab(t.nm,t.x,t.y,t.c,EF));
+  // now marker: the word to the right of the line, or to the left of it at the right edge
+  if(xn>=0&&xn<=W){gl.strokeStyle=C.fg;gl.lineWidth=1;gl.setLineDash([2,3]);gl.beginPath();gl.moveTo(snapPx(xn),top-8);gl.lineTo(snapPx(xn),bot);gl.stroke();gl.setLineDash([]);
+    const NF='500 11px '+MONO; g.font=NF; const w=g.measureText('сейчас').width; lab('сейчас',xn+5+w<=W-2?xn+5:xn-5-w,bot-6,C.fg,NF,'alphabetic')}
+  // y labels: on their grid line at the left edge; one that the curve or another label would cross is left out
+  {const YF='500 11px '+MONO; g.font=YF; const pts=[].concat(...segs,...cmpPts);
+    for(let v=yFirst;v<=yMax;v+=stepY){const y=Y(v); if(y<top-2) continue; const txt=fmtS(v), w=g.measureText(txt).width, r={x:0,y:y-8,w:w+4,h:16};
+      if(labs.some(l=>meets(r,l.r))||pts.some(p=>p[0]>=-4&&p[0]<=w+10&&Math.abs(p[1]-y)<9)) continue; lab(txt,2,y,C.muted,YF)}}
   // pin marker
   if(pin!=null){const pi=idxAt(pin),px=X(D.t[pi]),py=Y(D.temp[pi]);
-    if(px>=-6&&px<=W+6){g.strokeStyle=C.pin;g.lineWidth=1.5;g.beginPath();g.moveTo(Math.round(px)+.5,top-8);g.lineTo(Math.round(px)+.5,bot);g.stroke();
-      g.beginPath();g.moveTo(px,py-12);g.lineTo(px+5,py-5);g.lineTo(px,py+2);g.lineTo(px-5,py-5);g.closePath();g.fillStyle=C.pin;g.fill()}}
+    if(px>=-6&&px<=W+6){gl.strokeStyle=C.pin;gl.lineWidth=1.5;gl.beginPath();gl.moveTo(Math.round(px)+.5,top-8);gl.lineTo(Math.round(px)+.5,bot);gl.stroke();
+      gl.beginPath();gl.moveTo(px,py-12);gl.lineTo(px+5,py-5);gl.lineTo(px,py+2);gl.lineTo(px-5,py-5);gl.closePath();gl.fillStyle=C.pin;gl.fill()}}
+  // the lines go on the chart with holes where the labels and the sun and moon stand; then those on top
+  const holes=labs.map(l=>l.r).concat(icons.map(i=>i.r));
+  gl.save(); gl.setTransform(dpr,0,0,dpr,0,0); holes.forEach(r=>gl.clearRect(r.x,r.y,r.w,r.h)); gl.restore();
+  g.save(); g.setTransform(1,0,0,1,0,0); g.drawImage(lineC,0,0); g.restore();
+  icons.forEach(i=>i.f(g,i.x,i.y,C.muted));
+  dots.forEach(e=>{g.beginPath();g.arc(e.x,e.y,3,0,7);g.fillStyle=e.c;g.fill()});
+  labs.forEach(l=>{g.font=l.font;g.textBaseline=l.base;g.fillStyle=l.fg;g.fillText(l.txt,l.x,l.y)});
+  g.textBaseline='middle';
   if(fade){const xr=Math.min(W,X(fade.from)); if(xr>0){g.save();g.globalAlpha=1-fade.e;g.fillStyle=C.paper;g.fillRect(0,0,xr,Ht);g.restore()}}
   const paused=!busy&&D.err&&Date.now()<D.wait; // the archive waits out a limit or a lost connection
   // years not loaded yet in view: what is happening to them
@@ -907,50 +976,94 @@ function render(){
   const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
   const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
-  g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();g.moveTo(cx,top-8);g.lineTo(cx,bot);g.stroke(); // line and dot share one x, on the same pixel grid as the hour ticks
+  { // the cursor too passes behind the labels: its line is broken where one stands
+    const cut=holes.filter(r=>r.x<=cx&&cx<=r.x+r.w).sort((a,b)=>a.y-b.y); let y=top-8; g.strokeStyle=C.ink;g.lineWidth=1;g.beginPath();
+    for(const r of cut){if(r.y>y){g.moveTo(cx,y);g.lineTo(cx,Math.min(r.y,bot))} y=Math.max(y,r.y+r.h)} if(y<bot){g.moveTo(cx,y);g.lineTo(cx,bot)} g.stroke()} // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
   const tq=!yr&&(fine&&inQ(vc)||vc===nq)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
   readout(ci,yr,tq); drawOv(C);
-  // at rest on the current hour the header shows yesterday · now · tomorrow; any scrolling brings back the usual reading
-  const atNow=pin==null&&pull===0&&spd<3&&dayOf(tq??D.t[ci])===dayOf(D.now)&&ci>=24&&ci+24<D.t.length; // the cursor on today, in any scale, while not swiping fast
-  if(atNow) trio(ci,tq!=null?tq===nowAt:ci===idxAt(nowAt),tq,yr);
-  const hd=document.querySelector('header'); hd.classList.toggle('now',atNow); if(!hd.classList.contains('ready')) setTimeout(()=>hd.classList.add('ready'),400);
+  // the header with the neighbours on the right for every loaded reading; a year still loading keeps the plain one, which says so
+  const loaded=!inHole(D.t[ci])&&!!dayRec(D.t[ci])&&D.temp[ci]===D.temp[ci];
+  if(loaded) trio(ci,!yr&&(tq!=null?tq===nowAt:ci===idxAt(nowAt)),tq,yr);
+  const hd=document.querySelector('header'); hd.classList.toggle('now',loaded); if(!hd.classList.contains('ready')) setTimeout(()=>hd.classList.add('ready'),400);
   $('today').disabled=Math.abs(center-nowAt)<(yrv?DAY:fine||nq!=null?Q:H)/2; // only when the cursor already stands on the current reading
 }
 
 const dayRec=ms=>D.days[Math.floor((dayOf(ms)-D.d0)/DAY)];
 const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.now).getUTCFullYear()?' '+y:''};
+// The header for any reading: what and when on top, the reading big, and on the right the day before and the day after at the same
+// time (daily means in the year view), or the pin, or the compared city; under each its day's rain or snow and wind; then two phrases
+// on how they differ. Only redrawn when something in it changes, since it is asked for on every frame of a swipe
+let triKey='';
+const relName=k=>{const r=relDay(k); return Math.abs(r)<=1?REL[r]:null}; // «вчера», «сегодня», «завтра»; further away, a date
+const dayName=k=>{const r=relName(k), dt=new Date(k); return r?capF(r):WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]};
+function triCol(el,label,cls,val,rec,onX){const l=el.querySelector('.tl'), x=l.querySelector('button');
+  l.className='tl'+(cls?' '+cls:''); l.firstChild.textContent=label; x.hidden=!onX; x.onclick=onX; if(onX) x.setAttribute('aria-label',cls==='pin'?'Снять метку':'Убрать сравнение');
+  el.querySelector('.tn').textContent=val==null||val!==val?'—':fmtS(val); el._rec=rec}
+// on a wide screen the big number's column is as wide as the widest number of the mode, so yesterday and tomorrow stay put
+// whatever the number under the cursor
+const NW_S={temp:[-38,38],feel:[-48,48],wind:[8.8,48],pres:[788],hum:[100],cloud:[100]}; let nwKey='';
+function numCol(){const k=metric+'|'+(document.fonts&&document.fonts.status); if(k===nwKey) return; nwKey=k;
+  const e=document.createElement('div'); e.className='temp'; e.style.cssText='position:absolute;visibility:hidden;left:0;top:0';
+  $('trio').append(e); let w=0; for(const v of NW_S[metric]){bigNum(e,v); w=Math.max(w,e.getBoundingClientRect().width)} e.remove();
+  $('trio').style.setProperty('--nw',Math.ceil(w)+'px')}
 function trio(i,isNow,tq,yr){
-  if(yr){ // year view: daily means of yesterday, today and tomorrow
-    const m=ms=>{const r=dayRec(ms);return r?r.sum/r.n:NaN}, d=dayOf(D.now), n=m(d), y=m(d-DAY), t=m(d+DAY);
-    $('triWhen').textContent=dLabel(d); $('triTop').textContent='Сегодня · средняя за день';
-    bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t);
-    const mt=M(), deg=v=>mt.num(Math.abs(v)).replace(/^[+−]/,'')+mt.unit, word=v=>v>0?mt.more:mt.less, dy=n-y, dt=t-n, same=v=>Math.abs(v)<mt.th[0];
-    $('triSay1').textContent=same(dy)?'Так же, как вчера':`На ${deg(dy)} ${word(dy)}, чем вчера`;
-    $('triSay2').textContent=same(dt)?'Завтра в среднем — так же':`Завтра в среднем — на ${deg(dt)} ${word(dt)}`;
-    if(cmpWant) cmpSay(n,t,cmpDay(d),cmpDay(d+DAY),' в среднем');
-    return;
+  const ms=yr?dayOf(D.t[i]):tq??D.t[i], d=dayOf(ms), mode=pin!=null?'pin':cmpWant?'cmp':'days';
+  const key=[ms,isNow,yr,metric,mode,pin,!!CMP,cmpWant&&cmpWant.name,D.dv,D.now,D.q&&D.q.t0,innerWidth,document.fonts&&document.fonts.status].join('|'); if(key===triKey) return; triKey=key;
+  const mean=r=>r&&r.n?r.sum/r.n:NaN, qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
+  const at=t=>yr?mean(dayRec(t)):t<D.t[0]||t>D.t[D.t.length-1]?NaN:tq!=null?qv(t):D.temp[idxAt(t)];
+  const n=at(ms), m=M(), time=yr?'':tq!=null?hm(ms):hh(ms), what=yr?'средняя за день':metric!=='temp'?m.name.toLowerCase():WC[D.code[i]]||'';
+  numCol(); bigNum($('triN'),n); wxCol($('triNd'),dayRec(d));
+  const deg=v=>m.num(Math.abs(v)).replace(/^[+−]/,'')+m.unit, word=v=>v>0?m.more:m.less, same=v=>Math.abs(v)<m.th[0];
+  const prevN=relName(d-DAY)||'день назад', nextN=relName(d+DAY)||'на следующий день', still=yr?' в среднем':' в это время';
+  $('trio').classList.toggle('one',mode!=='days');
+  if(mode==='pin'){ // the pin's reading next to this one
+    const pv=yr?mean(dayRec(pin)):D.temp[idxAt(pin)], pr=REL[relDay(pin)], pd=new Date(pin);
+    triCol($('triYd'),(pr?capF(pr):pd.getUTCDate()+' '+MON[pd.getUTCMonth()]+withYear(pin))+(yr?'':', '+hh(pin)),'pin',pv,dayRec(pin),()=>setPin(null));
+    const dv=n-pv, e=wxDiff(dayRec(pin),dayRec(d)), b=same(dv)?['Так же, как на метке']:[`На ${deg(dv)} ${word(dv)}, чем на метке`];
+    fitText($('triSay1'),triJoin(b,same(dv),e));
+    const nw=yr?mean(dayRec(D.now)):D.temp[idxAt(D.now)], dn=n-nw;
+    $('triSay2').textContent=isNow||nw!==nw?' ':same(dn)?(yr?'Так же, как сегодня':'Так же, как сейчас'):`На ${deg(dn)} ${word(dn)}, чем ${yr?'сегодня':'сейчас'}`;
+  } else if(mode==='cmp'){ // the other city at the same local time
+    const c=cmpVal(yr?d:ms,yr), c2=cmpVal(yr?d+DAY:ms+DAY,yr);
+    triCol($('triYd'),cmpWant.name,'cmp',c,cmpRec(d),()=>setCmp(null));
+    cmpSay(n,at(ms+DAY),c,c2,yr?' в среднем':'',nextN);
+  } else { // the day before and the day after
+    const y=at(ms-DAY), t=at(ms+DAY);
+    triCol($('triYd'),dayName(d-DAY),'',y,dayRec(d-DAY)); triCol($('triTd'),dayName(d+DAY),'',t,dayRec(d+DAY));
+    const dy=n-y, dt=t-n, N=capF(nextN);
+    $('triSay1').textContent=$('triSay2').textContent=' ';
+    if(dy===dy) fitText($('triSay1'),triJoin(same(dy)?[...(yr?[]:[`Так же, как ${prevN} в это время`]),`Так же, как ${prevN}`,`Как ${prevN}`]:[`На ${deg(dy)} ${word(dy)}, чем ${prevN}`],same(dy),wxDiff(dayRec(d-DAY),dayRec(d))));
+    if(dt===dt) fitText($('triSay2'),triJoin(same(dt)?[`${N}${still} — так же`,`${N} — так же`]:[`${N}${still} — на ${deg(dt)} ${word(dt)}`,`${N} — на ${deg(dt)} ${word(dt)}`],same(dt),wxDiff(dayRec(d),dayRec(d+DAY))));
   }
-  const qv=t=>inQ(t)?D.q.temp[qIdx(t)]:hourlyAt(t);
-  const n=tq!=null?qv(tq):D.temp[i], y=tq!=null?qv(tq-DAY):D.temp[i-24], t=tq!=null?qv(tq+DAY):D.temp[i+24], ms=tq??D.t[i], at='в '+(tq!=null?hm(ms):hh(ms));
-  $('triWhen').textContent=dLabel(ms)+' · '+(tq!=null?hm(ms):hh(ms));
-  $('triTop').textContent=(isNow?'Сейчас':ms>D.now?'Сегодня · прогноз':'Сегодня')+(metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:'');
-  bigNum($('triN'),n); $('triY').textContent=fmtS(y); $('triT').textContent=fmtS(t);
-  const m=M(), deg=d=>m.num(Math.abs(d)).replace(/^[+−]/,'')+m.unit, word=d=>d>0?m.more:m.less, same=d=>Math.abs(d)<m.th[0];
-  const dy=n-y, dt=t-n;
-  const p1=same(dy)?'Так же, как вчера в это время':`На ${deg(dy)} ${word(dy)}, чем вчера`;
-  const p2=same(dt)?'Завтра в это время — так же':`Завтра в это время — на ${deg(dt)} ${word(dt)}`;
-  $('triSay1').textContent=p1; $('triSay2').textContent=p2;
-  if(cmpWant) cmpSay(n,t,cmpAt(ms),cmpAt(ms+DAY),'');
+  triWx(mode==='days'?['triYd','triTd']:['triYd']);
+  { // today's line keeps clear of the column on the right: if it would reach it, only the icons and numbers stay
+    const e=$('triNd'), lim=Math.min(...[...$('triYd').querySelectorAll('.wxt svg,.wxt span')].map(c=>c.getBoundingClientRect().left).filter(x=>x>0),Infinity)-12;
+    if(e.lastChild.getBoundingClientRect().right>lim) wxCol(e,dayRec(d),true)}
+  { // the top line shares its width with the headings on the right, so it is set after them: the longest wording that fits
+    const r=REL[relDay(ms)], when=isNow?'Сейчас':r?capF(r):dLabel(ms)+withYear(ms), f=ms>D.now&&!isNow&&!yr?' · прогноз':'', w=what?' · '+what:'';
+    const T=when+(time?', '+time:''); fitText($('triTop'),[T+f+w,T+w,T+f,T])} // the time always stays, the words give way first
 }
-// on today, while comparing, the two lines speak of the other city instead of yesterday and tomorrow here
-function cmpSay(n,t,c,c2,mean){
-  const nm=cmpWant.name; if(!CMP){$('triSay1').textContent='Загружаем погоду: '+nm+'…'; $('triSay2').textContent='\u00a0'; return}
-  const h=c==null?null:byHow(c-n), h2=c2==null?null:byHow(c2-t), here=D.where?inCity(D.where.name):'здесь', v=`${nm} ${M().num(c)+M().unit}${mean}`;
+// under the right-hand numbers «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise all of them only the icons and numbers
+function triWx(ids){const both=short=>ids.forEach(id=>wxTab($(id),$(id)._rec,short)); both(false);
+  // the table keeps to the right edge, so it overflows to the left, where scrollWidth doesn't see it
+  if(ids.some(id=>{const e=$(id).querySelector('.wxt'), l=e.getBoundingClientRect().left; return [...e.querySelectorAll('svg,span')].some(c=>c.getBoundingClientRect().left<l-.5)})) both(true)}
+// a phrase with the changes in rain or snow and wind: all of them with the long and then the short wording, then rain or snow alone,
+// then the phrase alone
+function triJoin(b,s,e){const w=x=>b.map(t=>t+(s?', но ':', ')+x); return [...(e.length?w(e.join(' и ')):[]),...(e.length>1?w(e[0]):[]),...b]}
+// while comparing, the two lines speak of the other city
+function cmpSay(n,t,c,c2,mean,nextN){
+  const nm=cmpWant.name; if(!CMP){$('triSay1').textContent='Загружаем погоду: '+nm+'…'; $('triSay2').textContent=' '; return}
+  const h=c==null?null:byHow(c-n), h2=c2==null||t!==t?null:byHow(c2-t), here=D.where?inCity(D.where.name):'здесь', v=`${nm} ${M().num(c)+M().unit}${mean}`;
   if(c==null) $('triSay1').textContent=capF(inCity(nm))+' прогноза на это время нет'; else fitText($('triSay1'),h?[`${v}, ${h}, чем ${here}`,`${v}, ${h}`]:[`${v}, как ${here}`,`${v}, так же`]);
-  if(c2==null) $('triSay2').textContent='\u00a0'; else $('triSay2').textContent=h2?`Завтра там ${h2}`:'Завтра там так же'; // the city here is named once, on the line above
+  $('triSay2').textContent=c2==null||t!==t?' ':h2?`${capF(nextN)} там ${h2}`:`${capF(nextN)} там так же`; // the city here is named once, on the line above
 }
+// the compared city's day: its rain or snow and wind, like a day here
+function cmpRec(d){if(!CMP||!CMP.rain) return null; const i0=Math.round((dayOf(d)-CMP.t0)/H), o={r:0,sn:0,w:0,g:0,th:false,n:0};
+  for(let i=Math.max(0,i0);i<Math.min(CMP.n,i0+24);i++){const r=CMP.rain[i]||0, c=CMP.code[i], w=CMP.s.wind[i], g=CMP.s.gust[i]; o.n++; o.r+=r;
+    if(r>0&&isSnow(c,CMP.s.temp[i])) o.sn+=r; if(w>o.w)o.w=w; if(g>o.g)o.g=g; if(c>=95) o.th=true}
+  return o.n>=20?o:null}
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=tq??D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms); // 23:45 belongs to its own day, not to the next hour's
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
@@ -962,8 +1075,7 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
   bigNum($('temp'),val);
   $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
   const tg=rel+(yr?' · средняя за день':metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
-  const rain=rec.r>0.05?rec.r.toFixed(1).replace('.',',')+' мм':'сухо';
-  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])} · ${rain}`:`${M().num(rec.lo)}…${fmtV(rec.hi)} · ${rain}`;
+  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])}`:`${M().num(rec.lo)}…${fmtV(rec.hi)}`; wxCol($('dayWx'),rec);
   const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
   if(pin==null&&cmpWant){cmpLine(val,yr?day:tq??ms,yr);return}
   // difference with the pin, or with the current hour (the current day's mean in the year view)
@@ -978,6 +1090,41 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
     const x=document.createElement('button');x.type='button';x.textContent='×';x.setAttribute('aria-label','Снять метку');x.onclick=()=>setPin(null);el.append(x);
   } else el.append(yr?' к средней за сегодня':' к '+(M().cur||'текущей'));
 }
+// a day's rain or snow and wind, for the columns under yesterday and tomorrow and for the phrases.
+// Strong wind: gusts of 15 m/s, as in the weather service's warnings
+const mmS=v=>v<9.95?String(Math.round(v*10)/10).replace('.',','):String(Math.round(v));
+function wxOf(d){if(!d||d.n<1) return null;
+  const s=d.r>=0.1?d.sn/d.r:0, k=d.r<0.1?'dry':s>0.7?'snow':s<0.3?(d.th?'storm':'rain'):'mix';
+  return {k,r:d.r,w:d.w,g:d.g,strong:d.g>=15}}
+const DROP='<path d="M12 3.5c3.4 4.3 5.8 7.3 5.8 10.1a5.8 5.8 0 0 1-11.6 0c0-2.8 2.4-5.8 5.8-10.1z"/>';
+const WXI={ // 24px icons drawn in the text colour
+  dry:DROP+'<path d="M4 20L20 4"/>', rain:DROP,
+  mix:'<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><circle cx="19" cy="20" r="2" fill="currentColor" stroke="none"/>',
+  snow:'<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5L12 7l2.5-2.5M9.5 19.5L12 17l2.5 2.5"/>',
+  storm:'<path d="M13.5 3L6 13.5h5.5L10.5 21 18 10.5h-5.5z"/>',
+  wind:'<path d="M3 8.5h10.5a3 3 0 1 0-3-3"/><path d="M3 12.5h15a3 3 0 1 1-3 3"/><path d="M3 16.5h6"/>'};
+const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]}</svg>`;
+const WXW={rain:'дождь',snow:'снег',mix:'дождь со снегом',storm:'гроза'};
+function wxTab(el,d,short){const t=el.querySelector('.wxt'), x=wxOf(d); t.className='wxt'+(short?' short':''); t.textContent='';
+  if(!x){t.innerHTML='&nbsp;'; return}
+  const row=(cls,icon,word,num,unit)=>{const r=document.createElement('div'); r.className='r '+cls; r.innerHTML=svgI(icon);
+    const [i,f]=num.split(','); // whole part to the right, the fraction after it, so the digits stand in columns
+    (short?[]:[[word,'w']]).concat([[i,'n'],[f?','+f:'','f'],[unit,'u']]).forEach(([v,cls])=>{const c=document.createElement('span'); c.textContent=v; c.className=cls; r.append(c)}); t.append(r)};
+  if(x.k==='dry'){const r=document.createElement('div'), c=document.createElement('span'); r.className='r'; r.innerHTML=svgI('dry'); c.className='all'; c.textContent='сухо'; r.append(c); t.append(r)}
+  else row(x.k==='snow'?'snow':'rain',x.k,WXW[x.k],mmS(x.r),'мм');
+  row(x.strong?'strong':'','wind',x.strong?'порывы':'ветер',String(Math.round(x.strong?x.g:x.w)),'м/с')}
+function wxCol(el,d,short){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
+  if(!x){p.innerHTML=w.innerHTML='&nbsp;'; p.className='wx p'; w.className='wx w'; return}
+  p.innerHTML=svgI(x.k)+'<span></span>'; p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
+  p.lastChild.textContent=x.k==='dry'?'сухо':(short?'':WXW[x.k]+' ')+mmS(x.r)+' мм';
+  w.innerHTML=svgI('wind')+'<span></span>'; w.className='wx w'+(x.strong?' strong':'');
+  w.lastChild.textContent=(short?'':x.strong?'порывы ':'ветер ')+Math.round(x.strong?x.g:x.w)+' м/с'}
+// what changes in rain or snow and wind from day a to day b, said of day b: «дождь», «без снега», «сильный ветер», «тише»
+function wxDiff(a,b){const A=wxOf(a), B=wxOf(b); if(!A||!B) return [];
+  const out=[], wet=k=>k!=='dry';
+  if(wet(B.k)&&B.k!==A.k) out.push(WXW[B.k]); else if(!wet(B.k)&&wet(A.k)) out.push(A.k==='snow'?'без снега':A.k==='mix'?'без осадков':'без дождя');
+  if(metric!=='wind'){ if(B.strong&&!A.strong) out.push('сильный ветер'); else if(A.strong&&!B.strong) out.push('тише'); else if(Math.abs(B.w-A.w)>=3&&Math.max(A.w,B.w)>=5) out.push(B.w>A.w?'ветренее':'тише') }
+  return out}
 // the compared city at the same local time (the same day's mean in the year view): its reading, and how it differs from here
 function cmpLine(val,t,yr){
   const el=$('delta'), vd=$('verdict'), c=cmpVal(t,yr), b=document.createElement('b'); el.textContent=''; vd.className='verdict';
