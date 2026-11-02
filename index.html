@@ -875,8 +875,9 @@ function render(){
   // pinned reference line
   if(pin!=null){const pi=idxAt(pin),py=Math.round(Y(D.temp[pi]))+.5;gl.strokeStyle=C.pin;gl.lineWidth=1;gl.setLineDash([3,4]);gl.beginPath();gl.moveTo(0,py);gl.lineTo(W,py);gl.stroke();gl.setLineDash([])}
   // temperature trace
-  // the line breaks where a year is not loaded yet (no days there, NaN hours) and where a new week springs in
-  const segs=[]; let seg=null, segW=0; const add=(p,w=0)=>{if(p[1]!==p[1]){seg=null;return} if(!seg||segW!==w){segs.push(seg=[]);segW=w} seg.push(p)};
+  // the line breaks only where a year is not loaded yet (no days there, NaN hours). A new week springing in stays joined:
+  // the line stretches out of the last known reading and the forecast slides up to it, like the compared city's line
+  const segs=[]; let seg=null; const add=p=>{if(p[1]!==p[1]){seg=null;return} if(!seg) segs.push(seg=[]); seg.push(p)};
   if(yr){ // a year: daily range as a band, daily mean as the line
     const runs=[]; days.forEach((d,j)=>{if(!j||d.k-days[j-1].k>DAY) runs.push([]); runs[runs.length-1].push(d)});
     runs.forEach(run=>{const band=run.map(d=>[X(d.k+12*H),Y(d.hi)]).concat(run.slice().reverse().map(d=>[X(d.k+12*H),Y(d.lo)]));
@@ -885,7 +886,7 @@ function render(){
   } else {let qDone=false;
     for(let i=i0;i<=i1;i++){const t=D.t[i];
       if(fine&&inQ(t)){ if(!qDone){qDone=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) add([X(q.t0+k*Q),Y(q.temp[k])])} continue }
-      add([X(t),Y(D.temp[i])],warp&&t>=warp.from?1:0)}}
+      add([X(t),Y(D.temp[i])])}}
   const path=(pts,c=g)=>{c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<pts.length-1;k++){const mx=(pts[k][0]+pts[k+1][0])/2,my=(pts[k][1]+pts[k+1][1])/2;c.quadraticCurveTo(pts[k][0],pts[k][1],mx,my)}const L=pts[pts.length-1];c.lineTo(L[0],L[1])};
   segs.forEach(pts=>{ if(pts.length<2) return;
     if(!yr){path(pts);g.lineTo(pts[pts.length-1][0],bot);g.lineTo(pts[0][0],bot);g.closePath();g.fillStyle=C['ink-soft'];g.fill()}
@@ -907,13 +908,21 @@ function render(){
       return {x:by?lp[0]+6:W-w-4, y:by?lp[1]:lp[1]-14, w, nm, c}});
     cityTags=tags}
   // extremes: per day when there is room, otherwise for the whole visible window. They are looked for in the readings
-  // the line is drawn through (every 15 minutes where those are shown), and the dots sit on the smoothed line itself
-  const sm=[]; {let qd=!fine||!D.q; for(let i=i0;i<=i1;i++){const t=D.t[i];
-    if(!qd&&inQ(t)){qd=true; const q=D.q; for(let k=qIdx(Math.max(t0-H,q.t0));k<=qIdx(Math.min(t1+H,q.end));k++) sm.push([q.t0+k*Q,q.temp[k]])}
+  // the line is drawn through (every 15 minutes where those are shown), and the dots sit on the smoothed line itself.
+  // A day is searched whole, not just its visible part, so a dot does not jump or vanish while the chart moves.
+  // A day's high or low counts only when it is a real turn of the curve: the highest (lowest) point within 6 hours on both
+  // sides, across midnight too, with a number that differs from the other end of that stretch. A day that only goes on
+  // falling (rising) gets no dot at its edge, and a flat stretch does not get the same number twice in two colours
+  const perDay=dayW>=40, sa=perDay?d0-DAY:t0-H, sb=perDay?dayOf(t1)+2*DAY:t1+H;
+  const sm=[]; {let qd=!fine||!D.q; for(let i=Math.max(0,idxAt(sa));i<=Math.min(iEnd,idxAt(sb));i++){const t=D.t[i];
+    if(!qd&&inQ(t)){qd=true; const q=D.q; for(let k=qIdx(Math.max(sa,q.t0));k<=qIdx(Math.min(sb,q.end));k++) sm.push([q.t0+k*Q,q.temp[k]])}
     if(fine&&inQ(t)||D.temp[i]!==D.temp[i]) continue; sm.push([t,D.temp[i]])}}
-  const ext=[], pick=(a,b)=>{let mx=null,mn=null; for(const p of sm){if(p[0]<a||p[0]>=b)continue; if(!mx||p[1]>mx[1])mx=p; if(!mn||p[1]<mn[1])mn=p}
-    if(mx){if(X(mx[0])>=0&&X(mx[0])<=W)ext.push([mx,1]); if(X(mn[0])>=0&&X(mn[0])<=W)ext.push([mn,-1])}};
-  if(dayW>=40){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
+  const turn=(p,s)=>{let o=p[1]; for(const r of sm){if(Math.abs(r[0]-p[0])>6*H||r[1]!==r[1]) continue; if(s*(r[1]-p[1])>0) return false; if(s*(r[1]-o)<0) o=r[1]}
+    return fmtS(o)!==fmtS(p[1])};
+  const ext=[], pick=(a,b)=>{let mx=null,mn=null; for(const p of sm){if(p[0]<a||p[0]>=b||p[1]!==p[1])continue; if(!mx||p[1]>mx[1])mx=p; if(!mn||p[1]<mn[1])mn=p}
+    if(!mx) return; const inV=p=>X(p[0])>=0&&X(p[0])<=W;
+    if(inV(mx)&&(!perDay||turn(mx,1)))ext.push([mx,1]); if(mn!==mx&&inV(mn)&&(!perDay||turn(mn,-1)))ext.push([mn,-1])};
+  if(perDay){for(let d=d0;d<=t1;d+=DAY) pick(d,d+DAY)} else pick(t0,t1+1);
   const EF='600 11px '+MONO; g.font=EF;
   const onLine=t=>yr?null:fine&&inQ(t)?curveAt(t,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(t,D.t[0],H,k=>D.temp[k],D.t.length);
   const meets=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
