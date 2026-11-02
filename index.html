@@ -103,6 +103,8 @@ header.now .trio{opacity:1;visibility:visible}
 @media (min-width:560px){.trio{grid-template-columns:var(--nw,auto) 16px 128px 128px minmax(0,1fr)}.ty{left:8px}}
 .tri-say{font:500 16px/20px var(--f-body);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #triSay1{grid-row:4;grid-column:1/-1;line-height:26px;align-self:end}#triSay2{grid-row:5;grid-column:1/-1}
+/* a sharp change in the hours ahead takes the first phrase, in the colour of what is coming */
+.tri-say.rain{color:var(--rain)}.tri-say.snow{color:var(--cold)}.tri-say.hot{color:var(--hot)}.tri-say.cold{color:var(--cold)}
 @media (prefers-reduced-motion:reduce){.hdr,.trio{transition:none}}
 header:not(.ready) .hdr,header:not(.ready) .trio{transition:none} /* the page opens straight on the right header, without a fade */
 .chartbox{flex:1;min-height:220px;position:relative;border-top:1px solid var(--grid-strong);border-bottom:1px solid var(--grid-strong);
@@ -1042,6 +1044,7 @@ function trio(i,isNow,tq,yr){
   const deg=v=>m.num(Math.abs(v)).replace(/^[+−]/,'')+m.unit, word=v=>v>0?m.more:m.less, same=v=>Math.abs(v)<m.th[0];
   const prevN=relName(d-DAY)||'день назад', nextN=relName(d+DAY)||'на следующий день', still=yr?' в среднем':' в это время';
   $('trio').classList.toggle('one',mode!=='days');
+  $('triSay1').className='tri-say';
   if(mode==='pin'){ // the pin's reading next to this one
     const pv=yr?mean(dayRec(pin)):D.temp[idxAt(pin)], pr=REL[relDay(pin)], pd=new Date(pin);
     triCol($('triYd'),(pr?capF(pr):pd.getUTCDate()+' '+MON[pd.getUTCMonth()]+withYear(pin))+(yr?'':', '+hh(pin)),'pin',pv,dayRec(pin),()=>setPin(null));
@@ -1058,7 +1061,9 @@ function trio(i,isNow,tq,yr){
     triCol($('triYd'),dayName(d-DAY),'',y,dayRec(d-DAY)); triCol($('triTd'),dayName(d+DAY),'',t,dayRec(d+DAY));
     const dy=n-y, dt=t-n, N=capF(nextN);
     $('triSay1').textContent=$('triSay2').textContent=' ';
-    if(dy===dy) fitText($('triSay1'),triJoin(same(dy)?[...(yr?[]:[`Так же, как ${prevN} в это время`]),`Так же, как ${prevN}`,`Как ${prevN}`]:[`На ${deg(dy)} ${word(dy)}, чем ${prevN}`],same(dy),wxDiff(dayRec(d-DAY),dayRec(d))));
+    const a=isNow&&!yr?ahead():null; // on "now" a sharp change in the hours ahead matters more than yesterday, whose numbers stay on the right
+    if(a){fitText($('triSay1'),a.v); $('triSay1').classList.add(a.cls)}
+    else if(dy===dy) fitText($('triSay1'),triJoin(same(dy)?[...(yr?[]:[`Так же, как ${prevN} в это время`]),`Так же, как ${prevN}`,`Как ${prevN}`]:[`На ${deg(dy)} ${word(dy)}, чем ${prevN}`],same(dy),wxDiff(dayRec(d-DAY),dayRec(d))));
     if(dt===dt) fitText($('triSay2'),triJoin(same(dt)?[`${N}${still} — так же`,`${N} — так же`]:[`${N}${still} — на ${deg(dt)} ${word(dt)}`,`${N} — на ${deg(dt)} ${word(dt)}`],same(dt),wxDiff(dayRec(d),dayRec(d+DAY))));
   }
   triWx(mode==='days'?['triYd','triTd']:['triYd']);
@@ -1149,6 +1154,37 @@ function wxDiff(a,b){const A=wxOf(a), B=wxOf(b); if(!A||!B) return [];
   if(wet(B.k)&&B.k!==A.k) out.push(WXW[B.k]); else if(!wet(B.k)&&wet(A.k)) out.push(A.k==='snow'?'без снега':A.k==='mix'?'без осадков':'без дождя');
   if(metric!=='wind'){ if(B.strong&&!A.strong) out.push('сильный ветер'); else if(A.strong&&!B.strong) out.push('тише'); else if(Math.abs(B.w-A.w)>=3&&Math.max(A.w,B.w)>=5) out.push(B.w>A.w?'ветренее':'тише') }
   return out}
+// A sharp change in the hours ahead, said from now: rain or snow coming (or rain turning to snow), a strong wind rising,
+// a cold or warm spell (6° or more off the same hour a day before, while now it is close to it), rain or snow ending.
+// Looks 12 hours ahead, and in the evening on to the next morning, so that at night one learns of the morning's snow
+const FREEZE=new Set([56,57,66,67]), WXA={rain:'дождь',snow:'снег',storm:'гроза',ice:'ледяной дождь'}, WXG={rain:'дождя',snow:'снега',storm:'грозы',ice:'ледяного дождя'};
+const PART=h=>h<5||h>=23?'ночью':h<12?'утром':h<18?'днём':'вечером';
+function ahead(){
+  const i0=Math.floor((D.now-D.t[0])/H), T=D.s.temp, h0=new Date(D.now).getUTCHours(), today=dayOf(D.now);
+  if(i0<24||i0+2>=D.t.length||T[i0]!==T[i0]) return null;
+  const end=Math.min(D.t.length-3,Math.max(i0+12,h0>=17?Math.floor((today+DAY+10*H-D.t[0])/H):0));
+  const kind=i=>{const r=D.rain[i]||0, c=D.code[i]; return r<0.1?'dry':c>=95?'storm':FREEZE.has(c)?'ice':isSnow(c,T[i])?'snow':'rain'};
+  const real=i=>(D.rain[i]||0)>=0.4||(D.rain[i]||0)+(D.rain[i+1]||0)+(D.rain[i+2]||0)>=0.5; // not a passing drop
+  const nowK=kind(i0)!=='dry'?kind(i0):kind(i0-1);
+  const when=i=>{const t=D.t[i], n=Math.round((t-D.now)/H), h=new Date(t).getUTCHours(), p=PART(h);
+    if(n<1) return 'Скоро'; if(n===1) return 'Через час'; if(n<=3) return 'Через '+plur(n,['час','часа','часов']);
+    return capF(dayOf(t)>today&&!(p==='ночью'&&h<5&&dayOf(t)===today+DAY&&h0>=12)?'завтра '+p:p)};
+  const ev=[];
+  for(let i=i0+1;i<=end;i++){const k=kind(i); // rain or snow coming, or the rain turning to snow
+    if(k!=='dry'&&k!==nowK&&real(i)&&(nowK==='dry'||kind(i+1)===k)){const w=nowK==='dry'?WXA[k]:WXA[k]+' вместо '+WXG[nowK]; ev.push({i,w,s:w,cls:k==='snow'?'snow':'rain',at:true}); break}}
+  if(Math.max(D.s.gust[i0],D.s.gust[i0-1]||0)<15) for(let i=i0+1;i<=end;i++) if(D.s.gust[i]>=15){ // a strong wind rising
+    let g=0; for(let j=i;j<=end;j++) g=Math.max(g,D.s.gust[j]); ev.push({i,w:'сильный ветер, порывы до '+Math.round(g)+' м/с',s:'сильный ветер',cls:'hot'}); break}
+  { const base=T[i0]-T[i0-24]; let b=null; // a cold or warm spell: the same hour a day before, compared with how it is now
+    for(let i=i0+3;i<=end;i++){const d=T[i]-T[i-24]; if(Math.abs(d)>=6&&Math.abs(d-base)>=4&&(!b||Math.abs(d)>Math.abs(b.d))) b={i,d}}
+    if(b){const r=Math.round(Math.abs(b.d)), p=PART(new Date(D.t[b.i]).getUTCHours()), prev=p==='ночью'?'прошлой ночью':(dayOf(D.t[b.i]-DAY)===today?'сегодня ':'вчера ')+p;
+      const m=`на ${r}° ${b.d>0?'теплее':'холоднее'}`; ev.push({i:b.i,w:m+', чем '+prev,s:m,cls:b.d>0?'hot':'cold'})}}
+  if(!ev.length&&nowK!=='dry') for(let i=i0+1;i<=end;i++) if(kind(i)==='dry'&&kind(i+1)==='dry'&&kind(i+2)==='dry'){ // rain or snow ending
+    const t=WXA[nowK]; return {v:[`${capF(t)} закончится к ${hh(D.t[i])}`,`${capF(t)} до ${hh(D.t[i])}`],cls:nowK==='snow'?'snow':'rain'}}
+  if(!ev.length) return null;
+  const [a,b]=ev, w=when(a.i), tm=a.at&&!/^Через/.test(w)?', с '+hh(D.t[a.i]):'', v=[];
+  if(b&&when(b.i)===w) v.push(`${w} ${a.s} и ${b.s}`); // the same time of day: both, briefly
+  v.push(`${w} ${a.w}${tm}`,`${w} ${a.w}`,`${w} ${a.s}`);
+  return {v,cls:a.cls}}
 // the compared city at the same local time (the same day's mean in the year view): its reading, and how it differs from here
 function cmpLine(val,t,yr){
   const el=$('delta'), vd=$('verdict'), c=cmpVal(t,yr), b=document.createElement('b'); el.textContent=''; vd.className='verdict';
