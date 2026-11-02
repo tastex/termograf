@@ -71,7 +71,8 @@ header{display:grid;grid-template-rows:22px auto 22px;row-gap:2px}
 header.vs .part{grid-template-rows:18px 44px 18px 22px 44px 18px}
 header.vs .part>.cn,header.vs .part>.cd,header.vs .part>.cg{display:block}
 .cn{color:var(--fg)}
-.vsn{display:none;position:absolute;left:0;right:0;top:80px;height:22px;align-items:center;gap:6px;font:500 13px/18px var(--f-body);color:var(--cmp);white-space:nowrap;min-width:0}
+.vsn{display:none;position:absolute;left:0;right:0;top:80px;height:22px;align-items:flex-end;justify-content:flex-end;gap:6px;font:500 16px/17px var(--f-body);color:var(--cmp);white-space:nowrap;min-width:0} /* on the right, just above its numbers, like the compared city on the main page */
+.vsn span{order:-1;font-size:13px}
 header.vs .vsn{display:flex}
 .vsn b{font-weight:500;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .vsn span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0}
