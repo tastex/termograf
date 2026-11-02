@@ -995,7 +995,8 @@ function render(){
     g.fillText(l[0],cx2,cy2+2);g.font='400 11px '+MONO;g.fillText(l[1],cx2,cy2+18);g.restore()}
   if(swap){g.save();g.globalAlpha=1-swap.e;g.drawImage(swap.img,0,0,W,Ht);g.restore()} // the previous mode fades out
   // center cursor
-  const ci=idxAt(vc), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
+  const rd=stepTw?stepTw.to:vc; // the reading being stepped to: the numbers switch to it at once, only the chart glides
+  const ci=idxAt(rd), cd=yr?D.days[Math.floor((dayOf(D.t[ci])-D.d0)/DAY)]:null;
   // the cursor stays put at the centre; the dot slides along the drawn curve instead of jumping hour to hour
   const cx=snapPx(X(vc)), cy=Y(yr?curveAt(vc,D.d0+12*H,DAY,j=>{const d=D.days[j];return d?d.sum/d.n:null},D.days.length):fine&&inQ(vc)?curveAt(vc,D.q.t0,Q,k=>D.q.temp[k],D.q.n):curveAt(vc,D.t[0],H,k=>D.temp[k],D.t.length));
   { // the cursor too passes behind the labels: its line is broken where one stands
@@ -1003,7 +1004,7 @@ function render(){
     for(const r of cut){if(r.y>y){g.moveTo(cx,y);g.lineTo(cx,Math.min(r.y,bot))} y=Math.max(y,r.y+r.h)} if(y<bot){g.moveTo(cx,y);g.lineTo(cx,bot)} g.stroke()} // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
-  const tq=!yr&&(fine&&inQ(vc)||vc===nq)?D.q.t0+qIdx(vc)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
+  const tq=!yr&&(fine&&inQ(rd)||rd===nq)?D.q.t0+qIdx(rd)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
   readout(ci,yr,tq); drawOv(C);
   // the header with the neighbours on the right for every loaded reading; a year still loading keeps the plain one, which says so
   const loaded=!inHole(D.t[ci])&&!!dayRec(D.t[ci])&&D.temp[ci]===D.temp[ci];
