@@ -836,6 +836,8 @@ function render(){
   const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;gl.strokeStyle=v===0?C['grid-strong']:C.grid;gl.beginPath();gl.moveTo(0,y);gl.lineTo(W,y);gl.stroke()}
   // hour ticks + midnight lines
+  // zoomed in, every hour has its tick but only every other hour its number: were every hour numbered, a one-hour step would
+  // leave the same picture of numbers in the same places (only the digits change), and the move read as a stall
   const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
   for(let ms=firstH;ms<=t1;ms+=hStep*H){
@@ -843,7 +845,7 @@ function render(){
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
     if(mid){gl.strokeStyle=C.grid;gl.lineWidth=1;gl.beginPath();gl.moveTo(x,0);gl.lineTo(x,bot);gl.stroke()}
-    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
+    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();if(hStep===1&&new Date(ms).getUTCHours()%2) continue;g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
   }
   // day labels: sticky to the left edge of each visible day, two lines
   for(let d=d0;d<=t1;d+=DAY){
