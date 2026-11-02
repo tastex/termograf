@@ -260,7 +260,7 @@ const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0, holes=[], err=null, wait=0; // holes: [from,to) ms of days not loaded yet; err, wait: why the archive pauses and until when
 let center=0, vc=0, wheelT=0, ovDrag=false, glide=false, span=14, spanU=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
-let fz=0, fzOn=false, slowMs=0, lastFrame=0, fv=0, mag=0; // span: days actually on screen, spanU: the scale picked; fz: slow-drag close look 0..1
+let fz=0, fzOn=false, slowMs=0, lastFrame=0, fv=0; // span: days actually on screen, spanU: the scale picked; fz: slow-drag close look 0..1
 let focus=null, wNow=[1,1,1], wFrom=[1,1,1], wTo=[1,1,1], wT0=0;   // band weights; a tapped chart takes the whole height
 try{span=spanU=+store.get('x3span')||14}catch(e){}
 
@@ -519,18 +519,14 @@ function render(){
   // The cursor stays in the middle and the charts step under it reading by reading: a day, or an hour once zoomed in to hours.
   // Each step is a quick ease-out (60 ms for a short one, up to 150 ms), so the points click into place under the cursor like a
   // magnet. Swiped fast, the charts run smoothly and the dots glide along the lines; let go, they settle on the nearest reading
-  // Between two readings the charts are not frozen: like a magnet they give a little under the moving finger (MAG of the way)
-  // and let go into the next reading; when the finger stops, the reading under the cursor pulls them back onto itself.
   // A step's tween is started a frame early, so it never begins with a frame standing still
   const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3; fv=fv*.7+inst/Math.max(4,dtF)*1000*.3;
   const wheeling=nowT-wheelT<180, want=pinch||spd>3?center:clampC(Math.round(center*Rs)/Rs), ppr=ppd/Rs;
-  const magOn=ppr>=5&&spd<=3&&!!drag&&!pinch&&!reduce(); mag=magOn?mag+((spd>.05?1:0)-mag)*(1-Math.exp(-dtF/(spd>.05?60:160))):0; if(mag<.002) mag=0;
-  const vt=want+(magOn?(center-want)*MAG*mag:0);
   if(pinch||reduce()||Math.abs(want-vc)>span/4){vc=want;stepTw=null}
-  else if(ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want||!magOn&&nowT-stepTw.t>=stepTw.ms&&Math.abs(vc-vt)>1e-4) stepTw={err:vc-vt,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-vt)*ppd*2.2))};
-    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=vt+stepTw.err*Math.pow(1-k,3)}
+  else if(ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={err:vc-want,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-want)*ppd*2.2))};
+    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=want+stepTw.err*Math.pow(1-k,3)}
   else {stepTw=null; vc+=(want-vc)*(spd>3?.6:.35)}
-  if(Math.abs(vt-vc)>.002||spd>.05||mag||wheeling) draw(); else {vc=want; stepTw=null; if(!drag) center=vc}
+  if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; stepTw=null; if(!drag) center=vc}
   fillHole(); if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
   // springy band weights
   if(wT0){const k=reduce()?1:Math.min(1,(performance.now()-wT0)/360), e=backOut(k); wNow=wFrom.map((f,i)=>f+(wTo[i]-f)*e); if(k<1) draw(); else {wNow=wTo.slice(); wT0=0}}
@@ -735,7 +731,7 @@ const box=$('box'), rub=r=>{const W=box.clientWidth;return W*.3*(1-Math.exp(-r/(
 // the day between the fingers stays under them
 const ptrs=new Map(); let pinch=null;
 const SPAN_MIN=3, SPAN_MAX=365; // closer than about a week the charts turn hourly
-const SLOW_V=45, SLOW_MS=450, MAG=.3, fzSpan=W=>Math.max(SPAN_MIN,Math.min(7,W/62)); // the close look: as on the main page; hourly at its scale
+const SLOW_V=45, SLOW_MS=450, fzSpan=W=>Math.max(SPAN_MIN,Math.min(7,W/62)); // the close look: as on the main page; hourly at its scale
 function zoomAt(d,x,i){ // d: days on screen; x: px from the chart's left edge that shows day i (fractional)
   const W=box.clientWidth; span=spanU=Math.min(SPAN_MAX,Math.max(SPAN_MIN,d)); fzOn=false; fz=0; slowMs=0; center=clampC(i-(x-W/2)/(W/span)); vc=center; lastC=null; spd=0;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.d/span))<.03)));

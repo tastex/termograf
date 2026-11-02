@@ -269,7 +269,7 @@ const MONO='"Golos Text",system-ui,sans-serif'; // chart labels use the text fac
 
 let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
 const Q=H/4; // quarter hour
-let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0, fv=0, mag=0, keepAt=null; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
+let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0, fv=0, keepAt=null; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
 let stepTw=null, warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
@@ -800,17 +800,13 @@ function render(){
   // dragged slowly, the chart steps reading by reading. Zoomed in, each step is its own quick ease-out tween: the hour ticks
   // snap to the cursor like a magnet, without a slow creeping tail and without a jump. Its length follows the step:
   // 150 ms for a long hourly step, down to 60 ms for a short 15-minute one, so a short step never lags behind the finger.
-  // Between two readings the chart is not frozen: like a magnet it gives a little under the moving finger (MAG of the way)
-  // and lets go into the next reading. When the finger stops, the reading under the cursor pulls the chart back onto itself.
   // The tween runs from its first frame (it is started a frame early), so a step never begins with a frame standing still
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const magOn=fine&&spd<=3&&!!drag&&!reduce; mag=magOn?mag+((spd>0.05?1:0)-mag)*(1-Math.exp(-dtF/(spd>0.05?60:160))):0; if(mag<.002) mag=0;
-  const tgt=want+(magOn?(center-want)*MAG*mag:0);
   if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4){vc=want;stepTw=null}
-  else if(fine&&spd<=3){ if(!stepTw||stepTw.to!==want||!magOn&&nowT-stepTw.t>=stepTw.ms&&Math.abs(vc-tgt)>H*1e-4) stepTw={err:vc-tgt,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-tgt)/H*pph*2.2))};
-    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=tgt+stepTw.err*Math.pow(1-k,3)}
+  else if(fine&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={err:vc-want,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-want)/H*pph*2.2))};
+    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=want+stepTw.err*Math.pow(1-k,3)}
   else {stepTw=null; vc+=(want-vc)*(spd>3?0.6:0.35)}
-  if(Math.abs(tgt-vc)>(yrv?DAY:H)*0.01||spd>0.05||mag) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
+  if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right,
   // and the shift only shrinks, so the new week never runs over the days before it
@@ -1280,7 +1276,7 @@ let drag=null;
 // the moment between the fingers stays under them
 const ptrs=new Map(); let pinch=null;
 const SPAN_MIN=12, SPAN_MAX=8760;
-const SLOW_V=45, SLOW_MS=450, MAG=.3; // the close look: finger under 45 px/s for 450 ms; between readings the chart gives 30% of the finger's way
+const SLOW_V=45, SLOW_MS=450; // the close look: finger under 45 px/s for 450 ms
 function zoomAt(h,x,t){ // h: hours on screen; x: px from the chart's left edge that shows the moment t
   const W=box.clientWidth; h=Math.min(SPAN_MAX,Math.max(SPAN_MIN,h)); fzOn=false;fz=0;slowMs=0;
   spanH=spanV=h; center=t-(x-W/2)/(W/h)*H; clamp(); vc=center; lastC=null; spd=0; keepAt=null;
