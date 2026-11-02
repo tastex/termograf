@@ -453,6 +453,43 @@ function render(){
   if(!ys||red) ys=[mn,mx]; else ys=ys.map((s,q)=>{const t=[mn,mx][q], d=t-s; if(Math.abs(d)<.02) return t; moving=true; return s+d*.2});
   const [y0,y1]=ys, Y=v=>TOP+10+(y1-v)/(y1-y0||1)*(Ht-TOP-BOT-20);
   geom={GUT,cw,L,n};
+  // Where the lines run, the years and the normal as drawn, sampled into short pieces kept in 16px columns; dots only on the
+  // extremes and their numbers where no line passes and no other number stands, the same rules as on the main chart
+  const cols=new Map(), seg2=(a,b)=>{for(let k=Math.floor(Math.min(a[0],b[0])/16);k<=Math.floor(Math.max(a[0],b[0])/16);k++){let c=cols.get(k); if(!c) cols.set(k,c=[]); c.push([a,b])}};
+  const cross=(r,mg=1.5)=>{const x0=r.x-mg,x1=r.x+r.w+mg,y0=r.y-mg,y1=r.y+r.h+mg, seen=new Set();
+    for(let k=Math.floor(x0/16);k<=Math.floor(x1/16);k++) for(const s of cols.get(k)||[]){if(seen.has(s)) continue; seen.add(s);
+      const [a,b]=s; let t0=0,t1=1; const dx=b[0]-a[0],dy=b[1]-a[1]; let ok=true; // Liang–Barsky: does the piece enter the box
+      for(const [pp,qq] of [[-dx,a[0]-x0],[dx,x1-a[0]],[-dy,a[1]-y0],[dy,y1-a[1]]]){
+        if(pp===0){if(qq<0){ok=false;break}} else {const t=qq/pp; if(pp<0){if(t>t1){ok=false;break} if(t>t0)t0=t} else {if(t<t0){ok=false;break} if(t<t1)t1=t}}}
+      if(ok) return true}
+    return false};
+  const meets=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h, taken=[], tbox=(x,y,w)=>({x:x-2,y:y-7,w:w+4,h:14}), gapB=(x,y,w)=>({x:x-3,y:y-8,w:w+6,h:16});
+  const free=(x,y,w,xa=GUT+2,xb=W-2)=>x>=Math.max(GUT+2,xa)&&x+w<=Math.min(W-2,xb)&&y-7>=TOP+2&&y+7<=Ht-BOT-2&&!cross(tbox(x,y,w))&&!taken.some(t=>meets(gapB(x,y,w),t));
+  const trace=(f,a,b,S,Xf)=>{let p=null; for(let t=a;t<=b+1e-9;t+=1/S){const v=f(t); if(v==null){p=null;continue} const q=[Xf(t),Y(v)]; if(p) seg2(p,q); p=q}};
+  const ck=mono(B.clim), ext=[], ms=cs.map((c,i)=>c.mean==null?null:B.avg==null?c.mean:B.avg+(c.mean-B.avg)*gr(i)), mm=mono(ms), Xc=i=>X(i)+cw/2;
+  if(lines>0) for(let i=i0;i<=i1;i++){const c=cs[i], vs=c.pts.map((_,k)=>shown(i,k)), m=mono(vs), Xk=t=>PX(i,t);
+    trace(t=>herm(vs,m,t),0,K-1,8,Xk); trace(t=>herm(B.clim,ck,t),0,K-1,8,Xk);
+    if(lines>.5){let hi=null, lo=null; vs.forEach((v,k)=>{if(v==null) return; if(!hi||v>hi.v) hi={k,v}; if(!lo||v<lo.v) lo={k,v}});
+      // each year's highest and lowest point, when they differ enough to tell apart
+      if(hi&&hi.v-lo.v>=mt.same) for(const [e,sg] of [[hi,1],[lo,-1]]) ext.push({x:PX(i,e.k),y:Y(e.v),v:e.v,s:sg,soft:!!(c.pts[e.k].fc||c.pts[e.k].part),xa:X(i)+2,xb:X(i+1)-2})}}
+  if(lines<1){const a=Math.max(0,i0-1), b=Math.min(n-1,i1+1); trace(t=>herm(ms,mm,t),a,b,8,Xc);
+    // zoomed out: a year warmer (cooler) than every other within about 56 px on each side, by more than "as usual"
+    if(lines<=.5){const nb=Math.max(1,Math.round(56/cw));
+      for(let i=i0;i<=i1;i++){const v=ms[i]; if(v==null) continue; let mxOk=true, mnOk=true, l=v, h=v;
+        for(let q=i-nb;q<=i+nb&&(mxOk||mnOk);q++){if(q===i) continue; const w=ms[q]; if(w==null) continue; if(w<l)l=w; if(w>h)h=w; if(q<i?w>=v:w>v) mxOk=false; if(q<i?w<=v:w<v) mnOk=false}
+        if(mxOk&&v-l>=mt.same) ext.push({x:Xc(i),y:Y(v),v,s:1,soft:!!cs[i].fc,i}); else if(mnOk&&h-v>=mt.same) ext.push({x:Xc(i),y:Y(v),v,s:-1,soft:!!cs[i].fc,i})}}}
+  // a number above its dot (below for a low), a little aside or a line further off when a line or a number is in the way, or level
+  // with the dot on either side; with no free place, or the same number already shown next to it, only the dot stays
+  const EF='600 11px '+FONT, labs=[]; g.font=EF;
+  ext.forEach(e=>{const txt=mt.num(e.v), w=g.measureText(txt).width; if(labs.some(o=>o.txt===txt&&o.s===e.s&&Math.abs(o.ex-e.x)<40)) return;
+    const tries=[]; for(const d of [11,22,33]) for(const tx of [e.x-w/2,e.x-w-3,e.x+3]) tries.push([tx,e.s>0?e.y-d:e.y+d]); tries.push([e.x+7,e.y],[e.x-w-7,e.y]);
+    // in the columns, a number stays in its own year's column
+    for(const [tx,ty] of tries){const x=Math.min(Math.min(W-3,e.xb??W)-w,Math.max(Math.max(GUT+3,e.xa??0),tx)); if(free(x,ty,w,e.xa,e.xb)){labs.push({txt,x,y:ty,s:e.s,ex:e.x}); taken.push(gapB(x,ty,w)); return}}});
+  // lines with holes where a number stands
+  const hl=(x0,x1,y)=>{let x=x0; const cut=taken.filter(r=>r.y<=y&&y<=r.y+r.h&&r.x+r.w>x0&&r.x<x1).sort((a,b)=>a.x-b.x);
+    g.beginPath(); for(const r of cut){if(r.x>x){g.moveTo(x,y);g.lineTo(r.x,y)} x=Math.max(x,r.x+r.w)} if(x<x1){g.moveTo(x,y);g.lineTo(x1,y)} g.stroke()};
+  const vl=(x,y0,y1)=>{let y=y0; const cut=taken.filter(r=>r.x<=x&&x<=r.x+r.w&&r.y+r.h>y0&&r.y<y1).sort((a,b)=>a.y-b.y);
+    g.beginPath(); for(const r of cut){if(r.y>y){g.moveTo(x,y);g.lineTo(x,r.y)} y=Math.max(y,r.y+r.h)} if(y<y1){g.moveTo(x,y);g.lineTo(x,y1)} g.stroke()};
   g.save(); g.beginPath(); g.rect(GUT,0,W-GUT,Ht); g.clip();
   // warming stripes behind everything: each year tinted by how far it was from the normal
   for(let i=i0;i<=i1;i++){g.fillStyle=tint(C,cs[i].anom,.07+.38*(1-lines)); g.fillRect(X(i),TOP,cw+.5,Ht-TOP-BOT)}
@@ -462,12 +499,11 @@ function render(){
   // temperature lines and the scale in the gutter
   const step=niceStep(y1-y0); g.font='400 11px '+FONT;g.textBaseline='middle';g.textAlign='right';
   for(let v=Math.ceil(y0/step)*step;v<=y1;v+=step){const y=Math.round(Y(v))+.5; if(y<TOP+4||y>Ht-BOT-4) continue;
-    g.strokeStyle=v===0?C['grid-strong']:C.grid;g.lineWidth=1;g.beginPath();g.moveTo(GUT,y);g.lineTo(W,y);g.stroke();g.fillStyle=C.muted;g.fillText(mt.ax(+v.toFixed(2)),GUT-5,y)}
+    g.strokeStyle=v===0?C['grid-strong']:C.grid;g.lineWidth=1;hl(GUT,W,y);g.fillStyle=C.muted;g.fillText(mt.ax(+v.toFixed(2)),GUT-5,y)}
   g.textAlign='left';
   g.save(); g.beginPath(); g.rect(GUT,0,W-GUT,Ht); g.clip();
   if(lines>0){ g.globalAlpha=lines; g.strokeStyle=C.grid;g.lineWidth=1;
-    for(let i=i0;i<=i1+1;i++){const x=Math.round(X(i))+.5; g.beginPath();g.moveTo(x,TOP);g.lineTo(x,Ht-BOT);g.stroke()} g.globalAlpha=1 }
-  const ck=mono(B.clim), r=Math.max(2,Math.min(3.4,cw/K*.26));
+    for(let i=i0;i<=i1+1;i++){const x=Math.round(X(i))+.5; vl(x,TOP,Ht-BOT)} g.globalAlpha=1 }
   for(let i=i0;i<=i1&&lines>0;i++){
     const c=cs[i], vs=c.pts.map((_,k)=>shown(i,k)), m=mono(vs), soft=k=>c.pts[k].fc||c.pts[k].part, Xk=k=>PX(i,k);
     // the gap between the year and the normal, filled warm above it and cool below
@@ -483,22 +519,23 @@ function render(){
     // the year itself: unfinished points and the forecast are hollow and lighter
     g.lineWidth=i===si?2.6:2;g.lineJoin='round';g.lineCap='round';g.strokeStyle=C.ink;
     for(let k=0;k<K-1;k++){if(vs[k]==null||vs[k+1]==null) continue; g.globalAlpha=lines*(soft(k)||soft(k+1)?.45:1); g.beginPath(); spline(g,vs,m,Xk,Y,k,k+1); g.stroke()}
-    if(cw/K>=7) vs.forEach((v,k)=>{if(v==null) return; g.globalAlpha=lines; g.beginPath();g.arc(Xk(k),Y(v),r,0,7);
-      if(soft(k)){g.fillStyle=C.paper;g.fill();g.lineWidth=1.4;g.stroke()} else {g.fillStyle=C.ink;g.fill()}});
     g.globalAlpha=1;
   }
   if(lines<1){ // zoomed out: the period's mean, year after year, against the normal
     g.globalAlpha=1-lines;
     if(B.avg!=null){g.setLineDash([4,4]);g.strokeStyle=C.muted;g.lineWidth=1.2;g.beginPath();g.moveTo(GUT,Y(B.avg));g.lineTo(W,Y(B.avg));g.stroke();g.setLineDash([])}
-    const ms=cs.map((c,i)=>c.mean==null?null:B.avg==null?c.mean:B.avg+(c.mean-B.avg)*gr(i)), mm=mono(ms), Xc=i=>X(i)+cw/2;
     g.strokeStyle=C.ink;g.lineWidth=2;g.lineJoin='round';
     const a=Math.max(0,i0-1), b=Math.min(n-1,i1+1);
     for(let i=a;i<b;i++){if(ms[i]==null||ms[i+1]==null) continue; g.globalAlpha=(1-lines)*(cs[i+1].fc?.45:1); g.beginPath();spline(g,ms,mm,Xc,Y,i,i+1);g.stroke()}
     g.globalAlpha=1-lines;
-    for(let i=i0;i<=i1;i++){if(ms[i]==null) continue; const rr=i===si?4:cw>=6?2.4:0; if(!rr) continue; g.beginPath();g.arc(Xc(i),Y(ms[i]),rr,0,7);
-      if(cs[i].fc){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.stroke()} else {g.fillStyle=C.ink;g.fill()}}
+    if(ms[si]!=null&&si>=i0&&si<=i1){g.beginPath();g.arc(Xc(si),Y(ms[si]),4,0,7); // the chosen year
+      if(cs[si].fc){g.fillStyle=C.paper;g.fill();g.lineWidth=1.5;g.stroke()} else {g.fillStyle=C.ink;g.fill()}}
     g.globalAlpha=1;
   }
+  // the extremes: dots, filled (hollow for an unfinished or forecast point), and their numbers, warm for a high, cool for a low
+  g.globalAlpha=lines>.5?lines:1-lines; g.strokeStyle=C.ink;
+  ext.forEach(e=>{if(e.i===si) return; g.beginPath();g.arc(e.x,e.y,3,0,7); if(e.soft){g.fillStyle=C.paper;g.fill();g.lineWidth=1.4;g.stroke()} else {g.fillStyle=C.ink;g.fill()}});
+  g.font=EF; g.textBaseline='middle'; labs.forEach(l=>{g.fillStyle=l.s>0?C.hot:C.cold; g.fillText(l.txt,l.x,l.y)}); g.globalAlpha=1;
   // each year's mean over the period along the top, warm or cool
   const inside=(x,w)=>clamp(x,GUT+w/2+2,W-w/2-1); // a label at the edge slides in rather than being cut
   g.textBaseline='alphabetic';g.textAlign='center';g.font='600 11px '+FONT;
