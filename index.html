@@ -1163,11 +1163,12 @@ const WXI={ // 24px icons drawn in the text colour
 const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]}</svg>`;
 const WXW={rain:'дождь',snow:'снег',mix:'дождь со снегом',storm:'гроза'};
 // How much of rain or snow and of wind is said, as the room allows. lv: 0 everything; 'num' both only the icons and numbers;
-// 1 the day's weightier one in full and the other one only its icon; 2 the weightier one its icon and number, the other its icon;
-// 3 only the icons. The weightier one: a strong wind, otherwise rain or snow, otherwise (a dry day) the wind
-const WXL=[0,1,2,3];
+// 'n1' the day's weightier one in full, the other its icon and number; 1 the weightier one in full, the other only its icon;
+// 2 the weightier one its icon and number, the other its icon; 3 only the icons.
+// The weightier one: a strong wind, otherwise rain or snow, otherwise (a dry day) the wind
+const WXL=[0,'n1',1,'num',2,3];
 function wxPlan(x,lv){if(lv===0) return ['full','full']; if(lv==='num') return ['num','num']; if(lv===3) return ['icon','icon'];
-  const m=lv===1?'full':'num', windFirst=x.strong||x.k==='dry'; return windFirst?['icon',m]:[m,'icon']}
+  const [a,b]=lv==='n1'?['full','num']:lv===1?['full','icon']:['num','icon'], windFirst=x.strong||x.k==='dry'; return windFirst?[b,a]:[a,b]}
 function wxTab(el,d,lv){const t=el.querySelector('.wxt'), x=wxOf(d); lv=lv===true?'num':lv||0; t.textContent='';
   if(!x){t.className='wxt'; t.innerHTML='&nbsp;'; return}
   const [pm,wm]=wxPlan(x,lv); t.className='wxt'+(pm!=='full'&&wm!=='full'?' short':'');
