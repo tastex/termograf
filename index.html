@@ -75,7 +75,7 @@ header.now .trio{opacity:1;visibility:visible}
 .trio>*{min-width:0}
 .trio .tag{grid-row:1;grid-column:1/-1;justify-self:stretch;text-align:left;width:0;min-width:100%} /* takes the room it is given, never widens the columns */
 #triN{grid-row:2;grid-column:1}
-#triNd{grid-row:3;grid-column:1/3;flex-direction:row;gap:10px;margin-top:-4px}
+#triNd{grid-row:3;grid-column:1/-1;flex-direction:row;gap:10px;margin-top:-4px}
 .tcol{grid-row:1/4;align-self:end;margin-bottom:3.5px;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
 .ty{grid-column:3;position:relative;left:12px}.tt{grid-column:4} /* the day before stands closer to the day after: one pair */
 .trio.one .ty{left:0}
@@ -1090,15 +1090,18 @@ function trio(i,isNow,tq,yr){
   triWx(mode==='days'?['triYd','triTd']:['triYd']);
   { // today's line keeps clear of the column on the right: if it would reach it, only the icons and numbers stay
     const e=$('triNd'), lim=Math.min(...[...$('triYd').querySelectorAll('.wxt svg,.wxt span')].map(c=>c.getBoundingClientRect().left).filter(x=>x>0),Infinity)-12;
-    if(e.lastChild.getBoundingClientRect().right>lim) wxCol(e,dayRec(d),true)}
+    wxFit(e,dayRec(d),lim)}
   { // the top line shares its width with the headings on the right, so it is set after them: the longest wording that fits
     const r=REL[relDay(ms)], when=isNow?'Сейчас':r?capF(r):dLabel(ms)+withYear(ms), f=ms>D.now&&!isNow&&!yr?' · прогноз':'', w=what?' · '+what:'';
     const T=when+(time?', '+time:''); fitText($('triTop'),[T+f+w,T+w,T+f,T])} // the time always stays, the words give way first
 }
-// under the right-hand numbers «дождь 6,6 мм», «ветер 2 м/с» where there is room, otherwise all of them only the icons and numbers
-function triWx(ids){const both=short=>ids.forEach(id=>wxTab($(id),$(id)._rec,short)); both(false);
+// under the right-hand numbers «дождь 6,6 мм», «ветер 2 м/с» where there is room; yesterday and tomorrow then both only the icons and numbers,
+// a single column the weightier one in full and the other its icon, then less (wxPlan)
+function triWx(ids){
   // the table keeps to the right edge, so it overflows to the left, where scrollWidth doesn't see it
-  if(ids.some(id=>{const e=$(id).querySelector('.wxt'), l=e.getBoundingClientRect().left; return [...e.querySelectorAll('svg,span')].some(c=>c.getBoundingClientRect().left<l-.5)})) both(true)}
+  const over=()=>ids.some(id=>{const e=$(id).querySelector('.wxt'), l=e.getBoundingClientRect().left; return [...e.querySelectorAll('svg,span')].some(c=>c.getBoundingClientRect().left<l-.5)});
+  // yesterday and tomorrow keep both numbers; a single column (the pin, the compared city) says the day's weightier one in full first
+  for(const lv of ids.length>1?[0,'num']:WXL){ids.forEach(id=>wxTab($(id),$(id)._rec,lv)); if(!over()) return}}
 // a phrase with the changes in rain or snow and wind: all of them with the long and then the short wording, then rain or snow alone,
 // then the phrase alone
 function triJoin(b,s,e){const w=x=>b.map(t=>t+(s?', но ':', ')+x); return [...(e.length?w(e.join(' и ')):[]),...(e.length>1?w(e[0]):[]),...b]}
@@ -1129,7 +1132,7 @@ function readout(i,yr,tq){ // in the year view the cursor stands on whole days a
   bigNum($('temp'),val);
   $('when').textContent=dLabel(ms)+withYear(ms)+(yr?'':' · '+(tq!=null?hm(tq):hh(ms)));
   const tg=rel+(yr?' · средняя за день':metric!=='temp'?' · '+M().name.toLowerCase():WC[D.code[i]]?' · '+WC[D.code[i]]:''); $('tag').textContent=tg[0].toUpperCase()+tg.slice(1);
-  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])}`:`${M().num(rec.lo)}…${fmtV(rec.hi)}`; wxCol($('dayWx'),rec);
+  $('cond').textContent=metric==='wind'&&!yr?`${rumb(D.s.dir[i])}, порывы до ${fmtV(D.s.gust[i])}`:`${M().num(rec.lo)}…${fmtV(rec.hi)}`; wxFit($('dayWx'),rec);
   const pb=$('pinBtn'); pb.setAttribute('aria-pressed',String(pin!=null)); pb.setAttribute('aria-label',pin!=null?'Снять метку':'Поставить метку на точку под курсором');
   if(pin==null&&cmpWant){cmpLine(val,yr?day:tq??ms,yr);return}
   // difference with the pin, or with the current hour (the current day's mean in the year view)
@@ -1159,20 +1162,33 @@ const WXI={ // 24px icons drawn in the text colour
   wind:'<path d="M3 8.5h10.5a3 3 0 1 0-3-3"/><path d="M3 12.5h15a3 3 0 1 1-3 3"/><path d="M3 16.5h6"/>'};
 const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]}</svg>`;
 const WXW={rain:'дождь',snow:'снег',mix:'дождь со снегом',storm:'гроза'};
-function wxTab(el,d,short){const t=el.querySelector('.wxt'), x=wxOf(d); t.className='wxt'+(short?' short':''); t.textContent='';
-  if(!x){t.innerHTML='&nbsp;'; return}
-  const row=(cls,icon,word,num,unit)=>{const r=document.createElement('div'); r.className='r '+cls; r.innerHTML=svgI(icon);
+// How much of rain or snow and of wind is said, as the room allows. lv: 0 everything; 'num' both only the icons and numbers;
+// 'n1' the day's weightier one in full, the other its icon and number; 1 the weightier one in full, the other only its icon;
+// 2 the weightier one its icon and number, the other its icon; 3 only the icons.
+// The weightier one: a strong wind, otherwise rain or snow, otherwise (a dry day) the wind
+const WXL=[0,'n1',1,'num',2,3];
+function wxPlan(x,lv){if(lv===0) return ['full','full']; if(lv==='num') return ['num','num']; if(lv===3) return ['icon','icon'];
+  const [a,b]=lv==='n1'?['full','num']:lv===1?['full','icon']:['num','icon'], windFirst=x.strong||x.k==='dry'; return windFirst?[b,a]:[a,b]}
+function wxTab(el,d,lv){const t=el.querySelector('.wxt'), x=wxOf(d); lv=lv===true?'num':lv||0; t.textContent='';
+  if(!x){t.className='wxt'; t.innerHTML='&nbsp;'; return}
+  const [pm,wm]=wxPlan(x,lv); t.className='wxt'+(pm!=='full'&&wm!=='full'?' short':'');
+  const row=(cls,icon,word,num,unit,how)=>{const r=document.createElement('div'); r.className='r '+cls; r.innerHTML=svgI(icon);
     const [i,f]=num.split(','); // whole part to the right, the fraction after it, so the digits stand in columns
-    (short?[]:[[word,'w']]).concat([[i,'n'],[f?','+f:'','f'],[unit,'u']]).forEach(([v,cls])=>{const c=document.createElement('span'); c.textContent=v; c.className=cls; r.append(c)}); t.append(r)};
-  if(x.k==='dry'){const r=document.createElement('div'), c=document.createElement('span'); r.className='r'; r.innerHTML=svgI('dry'); c.className='all'; c.textContent='сухо'; r.append(c); t.append(r)}
-  else row(x.k==='snow'?'snow':'rain',x.k,WXW[x.k],mmS(x.r),'мм');
-  row(x.strong?'strong':'','wind',x.strong?'порывы':'ветер',String(Math.round(x.strong?x.g:x.w)),'м/с')}
-function wxCol(el,d,short){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
+    if(how!=='icon') (how==='full'?[[word,'w']]:[]).concat([[i,'n'],[f?','+f:'','f'],[unit,'u']]).forEach(([v,cls])=>{const c=document.createElement('span'); c.textContent=v; c.className=cls; r.append(c)}); t.append(r)};
+  if(x.k==='dry'){const r=document.createElement('div'); r.className='r'; r.innerHTML=svgI('dry'); if(pm!=='icon'){const c=document.createElement('span'); c.className='all'; c.textContent='сухо'; r.append(c)} t.append(r)}
+  else row(x.k==='snow'?'snow':'rain',x.k,WXW[x.k],mmS(x.r),'мм',pm);
+  row(x.strong?'strong':'','wind',x.strong?'порывы':'ветер',String(Math.round(x.strong?x.g:x.w)),'м/с',wm)}
+function wxCol(el,d,lv){const x=wxOf(d), p=el.querySelector('.p'), w=el.querySelector('.w');
   if(!x){p.innerHTML=w.innerHTML='&nbsp;'; p.className='wx p'; w.className='wx w'; return}
-  p.innerHTML=svgI(x.k)+'<span></span>'; p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
-  p.lastChild.textContent=x.k==='dry'?'сухо':(short?'':WXW[x.k]+' ')+mmS(x.r)+' мм';
-  w.innerHTML=svgI('wind')+'<span></span>'; w.className='wx w'+(x.strong?' strong':'');
-  w.lastChild.textContent=(short?'':x.strong?'порывы ':'ветер ')+Math.round(x.strong?x.g:x.w)+' м/с'}
+  const [pm,wm]=wxPlan(x,lv||0);
+  p.innerHTML=svgI(x.k)+(pm==='icon'?'':'<span></span>'); p.className='wx p'+(x.k==='dry'?'':x.k==='snow'?' snow':' rain');
+  if(pm!=='icon') p.lastChild.textContent=x.k==='dry'?'сухо':(pm==='full'?WXW[x.k]+' ':'')+mmS(x.r)+' мм';
+  w.innerHTML=svgI('wind')+(wm==='icon'?'':'<span></span>'); w.className='wx w'+(x.strong?' strong':'');
+  if(wm!=='icon') w.lastChild.textContent=(wm==='full'?x.strong?'порывы ':'ветер ':'')+Math.round(x.strong?x.g:x.w)+' м/с'}
+// the line under the big number: the most that fits, nothing cut off and nothing past lim (the column on the right)
+function wxFit(el,d,lim){for(const lv of WXL){wxCol(el,d,lv);
+  const cut=[...el.querySelectorAll('.wx span')].some(c=>c.scrollWidth>c.clientWidth+.5);
+  if(!cut&&!(lim<el.lastChild.getBoundingClientRect().right)) return}}
 // what changes in rain or snow and wind from day a to day b, said of day b: «дождь», «без снега», «сильный ветер», «тише»
 function wxDiff(a,b){const A=wxOf(a), B=wxOf(b); if(!A||!B) return [];
   const out=[], wet=k=>k!=='dry';
