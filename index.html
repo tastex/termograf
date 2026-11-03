@@ -1302,7 +1302,7 @@ window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.p
   const dx=e.clientX-drag.last, now=performance.now();
   dragBy(dx); vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();
   // the finger has reached the edge of the screen and can go no further: while it is held there, the chart runs on by itself
-  // the way the finger was going, quicker and quicker (EDGE_V px/s and up), until the finger leaves the edge or lets go
+  // the way the finger was going, a little quicker as it goes (about 100 to 350 px/s), until the finger leaves the edge or lets go
   const ex=e.clientX, push=ex<EDGE?1-ex/EDGE:ex>innerWidth-EDGE?(ex-innerWidth+EDGE)/EDGE:0;
   if(push>0&&(ex<EDGE?dx<=0:dx>=0)){ if(!drag.auto){drag.auto={dir:ex<EDGE?-1:1,t:now,last:now,v:0}; requestAnimationFrame(edgeRun)} drag.auto.push=push}
   else if(drag.auto&&push===0) drag.auto=null;});
@@ -1314,7 +1314,7 @@ function dragBy(dx){ // the finger (or the edge run) moved the chart by dx px
   pull=rr>0?rub(rr):-rub(rl)}
 function edgeRun(now){const a=drag&&drag.auto; if(!a) return;
   const dt=Math.min(50,now-a.last); a.last=now;
-  a.v=(260+640*Math.min(1,(now-a.t)/700))*(.6+.4*a.push); // px/s: it gathers speed over 0.7 s, more the deeper the finger is at the edge
+  a.v=(110+240*Math.min(1,(now-a.t)/900))*(.6+.4*a.push); // px/s: it gathers speed over 0.9 s, more the deeper the finger is at the edge
   if(pull===0||Math.sign(pull)!==-a.dir) dragBy(a.dir*a.v*dt/1000); // stops at the end of the data, where the rubber band takes over
   vel=a.dir*a.v/1000; draw(); requestAnimationFrame(edgeRun)}
 const unptr=e=>{ptrs.delete(e.pointerId); if(pinch&&ptrs.size<2){pinch=null; draw()}};
