@@ -259,9 +259,10 @@ const DN=['день','дня','дней'], NED=['неделю','недели','�
 const reduce=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let days=[], todayI=0, nowMs=0, W0=null, sample=false, loading=false, limit=0, holes=[], err=null, wait=0; // holes: [from,to) ms of days not loaded yet; err, wait: why the archive pauses and until when
-let center=0, vc=0, wheelT=0, ovDrag=false, glide=false, span=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
+let center=0, vc=0, wheelT=0, ovDrag=false, glide=false, span=14, spanU=14, ys=null, drag=null, vel=0, raf=0, drawQ=0, spd=0, lastC=null, pull=0, fade=null;
+let fz=0, fzOn=false, slowMs=0, lastFrame=0, fv=0; // span: days actually on screen, spanU: the scale picked; fz: slow-drag close look 0..1
 let focus=null, wNow=[1,1,1], wFrom=[1,1,1], wTo=[1,1,1], wT0=0;   // band weights; a tapped chart takes the whole height
-try{span=+store.get('x3span')||14}catch(e){}
+try{span=spanU=+store.get('x3span')||14}catch(e){}
 
 // Open-Meteo directly, or through your own mirror (a Cloudflare Worker) when the direct address does not answer.
 // The mirror address goes into MIRROR below, or once through the link: ?mirror=https://name.account.workers.dev
@@ -446,7 +447,10 @@ async function fillHole(){ // the empty year under the view first, then its neig
 /* ---------- view ---------- */
 const clampC=c=>Math.max(-edge,Math.min(days.length-1+edge,c)); // zoomed in to hours, the first and last days' outer hours too
 function goToday(){center=todayI; draw()}
-function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
+// canvas sizes are measured once and then kept until a ResizeObserver says they changed: measuring on every frame of a
+// swipe made the browser lay the page out again each time, right after the header's numbers had changed
+const fitSz=new Map(), fitRO=window.ResizeObserver?new ResizeObserver(es=>{es.forEach(e=>fitSz.delete(e.target)); draw()}):null;
+function fit(c){let r=fitSz.get(c); if(!r){const b=c.getBoundingClientRect(); r={width:b.width,height:b.height}; if(fitRO){fitSz.set(c,r); fitRO.observe(c)}} const dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
 function scaleFor(j,hours){ // each chart scales to the days around the view, so day-to-day changes fill its height
@@ -503,16 +507,24 @@ const bez=(p,u)=>{const v=1-u; return [v*v*v*p[0]+3*v*v*u*p[2]+3*v*u*u*p[4]+u*u*
 const meets=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
 const PN=['Утро','День','Вечер'], lbls=[...document.querySelectorAll('.part .lbl')];
 function render(){
-  const [g,W,Ht]=fit($('cv')), ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e','cmp'].forEach(k=>C[k]=css('--'+k));
-  const mix=hourMix(ppd), Rd=mix>0?5:1, Rs=mix>=.5?5:1, nowT=performance.now(); stepR=Rs; edge=Rs>1?.4:0;
+  const [g,W,Ht]=fit($('cv')), nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
+  // dragged very slowly (under SLOW_V px/s for SLOW_MS of movement), the charts come closer, to the hours of about six days,
+  // as on the main page; a quick swipe or letting go returns to the scale picked
+  if(drag&&drag.lock==='x'){ if(fv>4&&fv<SLOW_V) slowMs+=dtF; else if(fv>=SLOW_V) slowMs=0; if(slowMs>SLOW_MS&&spanU<200&&spanU>fzSpan(W)+1) fzOn=true }
+  if(fv>360){fzOn=false;slowMs=0}
+  {const tg=fzOn?1:0; if(fz!==tg){fz+=(tg-fz)*(1-Math.exp(-Math.min(dtF,40)/(fzOn?90:110))); if(Math.abs(tg-fz)<.003) fz=tg; draw()}}
+  span=Math.exp(Math.log(spanU)+(Math.log(Math.min(spanU,fzSpan(W)))-Math.log(spanU))*fz);
+  const ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e','cmp'].forEach(k=>C[k]=css('--'+k));
+  const mix=hourMix(ppd), Rd=mix>0?5:1, Rs=mix>=.5?5:1; stepR=Rs; edge=Rs>1?.4:0;
   // The cursor stays in the middle and the charts step under it reading by reading: a day, or an hour once zoomed in to hours.
   // Each step is a quick ease-out (60 ms for a short one, up to 150 ms), so the points click into place under the cursor like a
   // magnet. Swiped fast, the charts run smoothly and the dots glide along the lines; let go, they settle on the nearest reading
-  const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3;
+  // A step's tween is started a frame early, so it never begins with a frame standing still
+  const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3; fv=fv*.7+inst/Math.max(4,dtF)*1000*.3;
   const wheeling=nowT-wheelT<180, want=pinch||spd>3?center:clampC(Math.round(center*Rs)/Rs), ppr=ppd/Rs;
   if(pinch||reduce()||Math.abs(want-vc)>span/4){vc=want;stepTw=null}
-  else if(ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={from:vc,to:want,t:nowT,ms:Math.min(150,Math.max(60,Math.abs(want-vc)*ppd*2.2))};
-    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=k>=1?want:stepTw.from+(want-stepTw.from)*(1-Math.pow(1-k,3))}
+  else if(ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={err:vc-want,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-want)*ppd*2.2))};
+    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=want+stepTw.err*Math.pow(1-k,3)}
   else {stepTw=null; vc+=(want-vc)*(spd>3?.6:.35)}
   if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; stepTw=null; if(!drag) center=vc}
   fillHole(); if(!loading&&days[0].k>limit&&vc-Math.max(span,14)<0) extendBack();
@@ -719,8 +731,9 @@ const box=$('box'), rub=r=>{const W=box.clientWidth;return W*.3*(1-Math.exp(-r/(
 // the day between the fingers stays under them
 const ptrs=new Map(); let pinch=null;
 const SPAN_MIN=3, SPAN_MAX=365; // closer than about a week the charts turn hourly
+const SLOW_V=45, SLOW_MS=450, fzSpan=W=>Math.max(SPAN_MIN,Math.min(7,W/62)); // the close look: as on the main page; hourly at its scale
 function zoomAt(d,x,i){ // d: days on screen; x: px from the chart's left edge that shows day i (fractional)
-  const W=box.clientWidth; span=Math.min(SPAN_MAX,Math.max(SPAN_MIN,d)); center=clampC(i-(x-W/2)/(W/span)); vc=center; lastC=null; spd=0;
+  const W=box.clientWidth; span=spanU=Math.min(SPAN_MAX,Math.max(SPAN_MIN,d)); fzOn=false; fz=0; slowMs=0; center=clampC(i-(x-W/2)/(W/span)); vc=center; lastC=null; spd=0;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.d/span))<.03)));
   store.set('x3span',String(Math.round(span*10)/10)); draw()}
 const dayAt=x=>vc+(x-box.clientWidth/2)/(box.clientWidth/span);
@@ -746,7 +759,10 @@ window.addEventListener('pointerup',e=>{unptr(e);if(!drag)return;const d=drag;dr
     const sumW=wNow.reduce((a,b)=>a+Math.max(0,b),0)||1; let acc=gm.top;
     for(let j=0;j<3;j++){acc+=Math.max(0,wNow[j])/sumW*(gm.Ht-gm.top-2); if(y<acc){setFocus(focus==null?j:null);return}} return}
   if(d.lock!=='x') return;
-  if(pull!==0){if(pull<0) extendBack(); springBack(); return}
+  if(pull!==0){fzOn=false;slowMs=0;if(pull<0) extendBack(); springBack(); return}
+  // let go after stepping slowly, the cursor stays on the reading it stood on: no gliding on; after a close look the charts
+  // return to the scale picked, on the same day
+  if(spd<=3||fzOn){center=clampC(stepTw?stepTw.to:Math.round(center*stepR)/stepR); fzOn=false; slowMs=0; draw(); return}
   if(!reduce()){glide=true;const step=()=>{vel*=.93;if(Math.abs(vel)<.0004){glide=false;draw();return}const c=clampC(center-vel*16);if(c===center){glide=false;draw();return}center=c;draw();raf=requestAnimationFrame(step)};raf=requestAnimationFrame(step)} else draw()});
 window.addEventListener('pointercancel',e=>{unptr(e);if(drag){drag=null;if(pull) springBack();draw()}});
 box.addEventListener('wheel',e=>{if(!days.length)return;e.preventDefault();
@@ -878,7 +894,7 @@ const ovEnd=()=>{ovDrag=false;cancelAnimationFrame(ovRaf);ovRaf=0;draw()};
 ov.addEventListener('pointerup',ovEnd); ov.addEventListener('pointercancel',ovEnd);
 $('ovz').addEventListener('click',()=>{if(!days.length)return; const cur=ovLevel(); // a year → ten years → everything → a year
   ovPick=Math.min(OVL[cur].s,days.length)>=days.length?0:cur+1; ovA=null; ovKey=''; draw()});
-function setSpan(d){span=d;ovPick=null;ovA=null;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.d/d))<.03)));ys=null;spd=0;lastC=null;draw()}
+function setSpan(d){span=spanU=d;fzOn=false;fz=0;slowMs=0;ovPick=null;ovA=null;store.set('x3span',String(d));document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.d/d))<.03)));ys=null;spd=0;lastC=null;draw()}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSpan(+b.dataset.d)));
 $('today').addEventListener('click',()=>{viewWant=null;goToday()});
 function useMetric(k){if(!METRICS[k]||k===metric) return; metric=k; MI=MK.indexOf(k); store.set('metric',k); days.forEach(d=>d.v=d.m[k]); ys=null; ovKey=''; showMetric(); draw()}
@@ -903,7 +919,7 @@ const zIn=VIEW_IN?nearest(VIEW_IN.d,[14,31,92,365]):0;
 setSpan(zIn||(span>=SPAN_MIN&&span<=SPAN_MAX?span:14));
 keepView(()=>{ const i=Math.round(vc), k=days[i]?.k; if(k==null) return null; // what came from another page stays as it came while untouched here
   const now=viewWant==null&&i===todayI, same=VIEW_IN&&!now&&dayOf(VIEW_IN.t)===k;
-  return {t:viewWant!=null||same?VIEW_IN.t:k+12*3600e3, d:span===zIn?VIEW_IN.d:span, now};
+  return {t:viewWant!=null||same?VIEW_IN.t:k+12*3600e3, d:spanU===zIn?VIEW_IN.d:spanU, now};
 });
 load();
 let loadedAt=Date.now();

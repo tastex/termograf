@@ -269,7 +269,7 @@ const MONO='"Golos Text",system-ui,sans-serif'; // chart labels use the text fac
 
 let D=null;   // {t:[ms local-as-UTC], temp, rain, code, sun:{dayMs:[rise,set]}, now}
 const Q=H/4; // quarter hour
-let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
+let spanV=72, fz=0, fzOn=false, slowMs=0, lastFrame=0, fv=0, keepAt=null; // spanV: hours actually on screen; fz: slow-drag zoom progress 0..1
 let stepTw=null, warp=null, pull=0, center=0, spanH=72, yMin=0, yMax=20, yRaf=0, vel=0, raf=0, pin=null, geom=null;
 
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
@@ -724,7 +724,10 @@ function goToday(){ // cursor on the reading that stands for "now" (the same one
 // (at 16:40 that is 16:45, not 17:00); without that data, the nearest hour
 const nowQ=()=>D.q&&inQ(D.now)?D.q.t0+qIdx(D.now)*Q:null, nowRead=()=>nowQ()??D.t[idxAt(D.now)];
 function idxAt(ms){return Math.max(0,Math.min(D.t.length-1,Math.round((ms-D.t[0])/H)))}
-function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
+// canvas sizes are measured once and then kept until a ResizeObserver says they changed: measuring on every frame of a
+// swipe made the browser lay the page out again each time, right after the header's numbers had changed
+const fitSz=new Map(), fitRO=window.ResizeObserver?new ResizeObserver(es=>{es.forEach(e=>fitSz.delete(e.target)); draw()}):null;
+function fit(c){let r=fitSz.get(c); if(!r){const b=c.getBoundingClientRect(); r={width:b.width,height:b.height}; if(fitRO){fitSz.set(c,r); fitRO.observe(c)}} const dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
 function sunIcon(g,x,y,c){if(x<6)return;g.save();g.fillStyle=c;g.strokeStyle=c;g.lineWidth=1.3;g.lineCap='round';
@@ -778,27 +781,30 @@ function render(){
     const o={txt,x,y,fg,font,base,w,r}; labs.push(o); return o};
   const C={};['grid','grid-strong','ink','ink-soft','rain','snow','fg','muted','future','paper','night','hot','cold','pin','cmp'].forEach(k=>C[k]=css('--'+k));
   // dragging very slowly zooms in towards 12 hours (15-minute steps); a quick swipe zooms back out. The scale runs at
-  // the target at once and settles softly (exponential ease-out), so the zoom reads as a quick, decided move
+  // the target at once and settles softly (exponential ease-out), so the zoom reads as a quick, decided move.
+  // "Very slowly" is a threshold on the finger's speed in px per second (not per frame, so a 120 Hz screen is no different):
+  // under SLOW_V for SLOW_MS of movement in all; a moment faster than that starts the count again, a swipe zooms back out
   const nowT=performance.now(), dtF=lastFrame?Math.min(250,nowT-lastFrame):16; lastFrame=nowT;
-  if(drag&&drag.lock==='x'){ if(spd>0.05&&spd<1.2) slowMs+=dtF; else if(spd>=1.2) slowMs=0; if(slowMs>500&&spanH<4000&&spanH>12) fzOn=true }
-  if(spd>6){fzOn=false;slowMs=0}
+  if(drag&&drag.lock==='x'){ if(fv>4&&fv<SLOW_V) slowMs+=dtF; else if(fv>=SLOW_V) slowMs=0; if(slowMs>SLOW_MS&&spanH<4000&&spanH>12) fzOn=true }
+  if(fv>360){fzOn=false;slowMs=0}
   {const tg=fzOn?1:0; if(fz!==tg){fz+=(tg-fz)*(1-Math.exp(-Math.min(dtF,40)/(fzOn?90:110))); if(Math.abs(tg-fz)<.003) fz=tg; draw()}}
   spanV=Math.exp(Math.log(spanH)+(Math.log(Math.min(spanH,12))-Math.log(spanH))*fz);
   const pph=W/spanV, fine=pph>=8&&!!D.q;
   // the cursor always stays in the middle. Moving slowly, the chart clicks into place hour by hour (day by day in the year view)
   // so the cursor sits exactly on a reading; swiped fast, the chart runs smoothly and the dot glides along the curve
   // zoomed out, the current quarter hour is one more reading to stop on, between the hours around it
-  const yrv=pph*24<4, nq=yrv?null:nowQ(), snapAt=t=>{if(yrv) return dayOf(t)+12*H; if(fine&&inQ(t)) return D.q.t0+qIdx(t)*Q;
+  const yrv=pph*24<4, nq=yrv?null:nowQ(), snapAt=t=>{if(yrv) return dayOf(t)+12*H; if((fine||keepAt!=null&&Math.abs(t-keepAt)<1)&&inQ(t)) return D.q.t0+qIdx(t)*Q;
     const h=D.t[idxAt(t)]; return nq!=null&&Math.abs(t-nq)<=Math.abs(t-h)?nq:h};
   snapNow=snapAt; const nowAt=snapAt(D.now); // "now" is drawn at the reading the cursor stops on, so the two lines meet exactly
-  const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3;
+  const inst=lastC==null?0:Math.abs(center-lastC)/H*pph; lastC=center; spd=spd*0.7+inst*0.3; fv=fv*0.7+inst/Math.max(4,dtF)*1000*0.3;
   // dragged slowly, the chart steps reading by reading. Zoomed in, each step is its own quick ease-out tween: the hour ticks
   // snap to the cursor like a magnet, without a slow creeping tail and without a jump. Its length follows the step:
-  // 150 ms for a long hourly step, down to 60 ms for a short 15-minute one, so a short step never lags behind the finger
+  // 150 ms for a long hourly step, down to 60 ms for a short 15-minute one, so a short step never lags behind the finger.
+  // The tween runs from its first frame (it is started a frame early), so a step never begins with a frame standing still
   const want=spd>3?center:snapAt(center), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(vc==null||reduce||Math.abs(want-vc)>spanV*H/4){vc=want;stepTw=null}
-  else if(fine&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={from:vc,to:want,t:nowT,ms:Math.min(150,Math.max(60,Math.abs(want-vc)/H*pph*2.2))};
-    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=k>=1?want:stepTw.from+(want-stepTw.from)*(1-Math.pow(1-k,3))}
+  else if(fine&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={err:vc-want,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-want)/H*pph*2.2))};
+    const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=want+stepTw.err*Math.pow(1-k,3)}
   else {stepTw=null; vc+=(want-vc)*(spd>3?0.6:0.35)}
   if(Math.abs(want-vc)>(yrv?DAY:H)*0.01||spd>0.05) draw(); else {vc=want; if(!drag&&!yrv) center=vc;} // at rest the view itself sits on the reading under the cursor
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
@@ -830,6 +836,8 @@ function render(){
   const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
   for(let v=yFirst;v<=yMax;v+=stepY){const y=Math.round(Y(v))+.5;gl.strokeStyle=v===0?C['grid-strong']:C.grid;gl.beginPath();gl.moveTo(0,y);gl.lineTo(W,y);gl.stroke()}
   // hour ticks + midnight lines
+  // hour numbers stand centred on their ticks, as the day numbers on «утро, день, вечер» stand on their days, so a step carries
+  // the number with its tick right under the cursor
   const yr=dayW<4, hStep=pph>=30?1:pph>=14?3:pph>=6?6:pph>=2.5?12:24, firstH=Math.ceil(t0/(hStep*H))*hStep*H;
   g.textBaseline='alphabetic';
   for(let ms=firstH;ms<=t1;ms+=hStep*H){
@@ -837,7 +845,7 @@ function render(){
     if(mid&&(yr?new Date(ms).getUTCDate()!==1:dayW<20&&new Date(ms).getUTCDay()!==1)) continue;
     if(ms>=D.fut||ms<D.t[0]) continue;
     if(mid){gl.strokeStyle=C.grid;gl.lineWidth=1;gl.beginPath();gl.moveTo(x,0);gl.lineTo(x,bot);gl.stroke()}
-    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.fillText(hh(ms).slice(0,2),x+3,bot+14)}
+    else if(pph>=6){g.strokeStyle=C['grid-strong'];g.lineWidth=1;g.beginPath();g.moveTo(x,bot);g.lineTo(x,bot+4);g.stroke();g.font='400 11px '+MONO;g.fillStyle=C.muted;g.textAlign='center';g.fillText(hh(ms).slice(0,2),x,bot+16);g.textAlign='left'}
   }
   // day labels: sticky to the left edge of each visible day, two lines
   for(let d=d0;d<=t1;d+=DAY){
@@ -1016,7 +1024,7 @@ function render(){
     for(const r of cut){if(r.y>y){g.moveTo(cx,y);g.lineTo(cx,Math.min(r.y,bot))} y=Math.max(y,r.y+r.h)} if(y<bot){g.moveTo(cx,y);g.lineTo(cx,bot)} g.stroke()} // line and dot share one x, on the same pixel grid as the hour ticks
   if(!inHole(vc)){g.beginPath();g.arc(cx,cy,5.5,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2.5;g.strokeStyle=C.ink;g.stroke()}
   {const v=CMP?cmpVal(yr?dayOf(vc):vc,yr):null; if(v!=null){g.beginPath();g.arc(cx,Y(v),4,0,7);g.fillStyle=C.paper;g.fill();g.lineWidth=2;g.strokeStyle=C.cmp;g.stroke()}}
-  const tq=!yr&&(fine&&inQ(rd)||rd===nq)?D.q.t0+qIdx(rd)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
+  const tq=!yr&&(fine&&inQ(rd)||rd===nq||rd===keepAt&&inQ(rd))?D.q.t0+qIdx(rd)*Q:null; // quarter hour under the cursor, when zoomed in or standing on "now"
   readout(ci,yr,tq); drawOv(C);
   // the header with the neighbours on the right for every loaded reading; a year still loading keeps the plain one, which says so
   const loaded=!inHole(D.t[ci])&&!!dayRec(D.t[ci])&&D.temp[ci]===D.temp[ci];
@@ -1030,7 +1038,7 @@ const withYear=ms=>{const y=new Date(ms).getUTCFullYear();return y!==new Date(D.
 // The header for any reading: what and when on top, the reading big, and on the right the day before and the day after at the same
 // time (daily means in the year view), or the pin, or the compared city; under each its day's rain or snow and wind; then two phrases
 // on how they differ. Only redrawn when something in it changes, since it is asked for on every frame of a swipe
-let triKey='';
+let triKey='', readKey=null;
 const relName=k=>{const r=relDay(k); return Math.abs(r)<=1?REL[r]:null}; // «вчера», «сегодня», «завтра»; further away, a date
 const dayName=k=>{const r=relName(k), dt=new Date(k); return r?capF(r):WD[dt.getUTCDay()]+' '+dt.getUTCDate()+' '+MON[dt.getUTCMonth()]};
 function triCol(el,label,cls,val,rec,onX){const l=el.querySelector('.tl'), x=l.querySelector('button');
@@ -1104,6 +1112,10 @@ function cmpRec(d){if(!CMP||!CMP.rain) return null; const i0=Math.round((dayOf(d
   return o.n>=20?o:null}
 function readout(i,yr,tq){ // in the year view the cursor stands on whole days and shows the daily mean
   const ms=tq??D.t[i], day=dayOf(ms), dd=relDay(ms), rec=dayRec(ms); // 23:45 belongs to its own day, not to the next hour's
+  // asked for on every frame of a swipe: while the reading and everything it is told against stay the same, the header is left
+  // alone, so the page is not laid out again under a chart that is only moving
+  const key=[i,yr,tq,metric,pin,cmpWant,CMP,D,D.q,D.now,D.temp[i],D.t[i],rec,D.where,busy,D.err,innerWidth,document.fonts&&document.fonts.status];
+  if(rec&&readKey&&key.length===readKey.length&&key.every((v,k)=>v===readKey[k])) return; readKey=rec?key:null;
   const ad=-dd, rel=REL[dd]||(dd>0?`через ${plur(dd,DN)}`:ad<14?`${plur(ad,DN)} назад`:ad<60?`${plur(Math.round(ad/7),NED)} назад`:ad<351?`${plur(Math.round(ad/30.4),MES)} назад`:yearsAgo(ad));
   if(!rec||D.temp[i]!==D.temp[i]){ // a year not loaded yet
     const paused=!busy&&D.err&&Date.now()<D.wait;
@@ -1266,9 +1278,10 @@ let drag=null;
 // the moment between the fingers stays under them
 const ptrs=new Map(); let pinch=null;
 const SPAN_MIN=12, SPAN_MAX=8760;
+const SLOW_V=45, SLOW_MS=450; // the close look: finger under 45 px/s for 450 ms
 function zoomAt(h,x,t){ // h: hours on screen; x: px from the chart's left edge that shows the moment t
   const W=box.clientWidth; h=Math.min(SPAN_MAX,Math.max(SPAN_MIN,h)); fzOn=false;fz=0;slowMs=0;
-  spanH=spanV=h; center=t-(x-W/2)/(W/h)*H; clamp(); vc=center; lastC=null; spd=0;
+  spanH=spanV=h; center=t-(x-W/2)/(W/h)*H; clamp(); vc=center; lastC=null; spd=0; keepAt=null;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.h/h))<.03)));
   store.set('span',String(Math.round(h))); draw()}
 const momentAt=x=>(vc??center)+(x-box.clientWidth/2)/(box.clientWidth/spanV)*H;
@@ -1276,7 +1289,7 @@ box.addEventListener('pointerdown',e=>{if(!D)return; ptrs.set(e.pointerId,{x:e.c
   if(ptrs.size===2){const [a,b]=[...ptrs.values()], r=box.getBoundingClientRect(), mx=(a.x+b.x)/2-r.left;
     cancelAnimationFrame(raf); drag=null; pull=0; pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,h:spanV,t:momentAt(mx)}; box.setPointerCapture?.(e.pointerId); return}
   if(ptrs.size>2) return;
-  cancelAnimationFrame(raf);viewWant=null;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
+  cancelAnimationFrame(raf);viewWant=null;keepAt=null;drag={x:e.clientX,y:e.clientY,last:e.clientX,t:performance.now(),lock:null,v:center+pull/(box.clientWidth/spanV)*H};vel=0});
 window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pinch&&ptrs.size===2){const [a,b]=[...ptrs.values()], r=box.getBoundingClientRect(); zoomAt(pinch.h*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),(a.x+b.x)/2-r.left,pinch.t); return}
   if(!drag)return;
@@ -1291,8 +1304,10 @@ window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.p
 const unptr=e=>{ptrs.delete(e.pointerId); if(pinch&&ptrs.size<2){pinch=null; draw()}};
 window.addEventListener('pointerup',e=>{unptr(e);if(!drag)return;const d=drag;drag=null;
   if(d.lock!=='x') return;
-  if(fzOn){fzOn=false;slowMs=0;draw()} // letting go after a close look returns to the chosen scale
-  if(pull!==0){release();return}
+  if(pull!==0){fzOn=false;slowMs=0;release();return}
+  // let go after stepping slowly, the cursor stays on the reading it stood on: no coasting on. After a close look the chart
+  // returns to the chosen scale and keeps that reading, 12:15 included, though the scale itself steps by whole hours
+  if(spd<=3||fzOn){const r=stepTw?stepTw.to:snapNow?snapNow(center):center; center=r; clamp(); if(fzOn&&D.q&&inQ(r)) keepAt=r; fzOn=false;slowMs=0;draw();return}
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches)coast();
 });
 window.addEventListener('pointercancel',e=>{unptr(e);if(drag){drag=null;if(pull!==0)release()}});
@@ -1333,7 +1348,7 @@ $('ovz').addEventListener('click',()=>{if(!D)return; const cur=ovLevel(); // a y
 function setZoom(h){
   fzOn=false;slowMs=0;
   if(vc!=null&&spanH<4000) center=vc; // start the new scale from the point under the cursor (the year view keeps the hour it was opened with)
-  spanH=h;vc=null;spd=0;lastC=null;ovPick=null;ovA=null;
+  spanH=h;vc=null;spd=0;lastC=null;ovPick=null;ovA=null;keepAt=null;
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(Math.abs(Math.log(+b.dataset.h/h))<.03)));store.set('span',String(h));if(D){clamp();draw()}}
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setZoom(+b.dataset.h)));
 $('today').addEventListener('click',()=>{viewWant=null;goToday()});

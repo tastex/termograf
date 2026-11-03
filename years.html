@@ -431,7 +431,10 @@ function build(){ // every year's column, its points, its mean, and how far it i
 }
 
 /* ---------- drawing ---------- */
-function fit(c){const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;
+// canvas sizes are measured once and then kept until a ResizeObserver says they changed: measuring on every frame of a
+// swipe made the browser lay the page out again each time, right after the header's numbers had changed
+const fitSz=new Map(), fitRO=window.ResizeObserver?new ResizeObserver(es=>{es.forEach(e=>fitSz.delete(e.target)); draw()}):null;
+function fit(c){let r=fitSz.get(c); if(!r){const b=c.getBoundingClientRect(); r={width:b.width,height:b.height}; if(fitRO){fitSz.set(c,r); fitRO.observe(c)}} const dpr=devicePixelRatio||1;
   if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr)}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
 function draw(){ if(drawQ) return; drawQ=requestAnimationFrame(()=>{drawQ=0;render()}) }
