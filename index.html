@@ -812,6 +812,10 @@ function render(){
   // and the shift only shrinks, so the new week never runs over the days before it
   const Xb=ms=>(ms-t0)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
   const X=ms=>Xb(ms)+(warp&&ms>=warp.from?wShift:0), Y=v=>top+(yMax-v)/(yMax-yMin)*(bot-top);
+  // the backing (night bands, the forecast shade) ends exactly where the line ends, on the last reading, not an hour past it.
+  // When a new week is revealed, the last hour of the old end grows out of the backing at once (warp.g), the rest slides in
+  const fEnd=D.fut-H, XE=(ms,end)=>{if(ms>=fEnd) ms=fEnd; if(!warp||ms<=warp.from-H) return X(ms);
+    if(ms<warp.from||end&&ms===warp.from) return Xb(warp.from-H)+(Xb(ms)-Xb(warp.from-H))*(warp.g??1); return X(ms)};
   geom={t0,pph,X};
   g.clearRect(0,0,W,Ht);
   const dayW=pph*24, d0=dayOf(t0)-DAY;
@@ -822,7 +826,7 @@ function render(){
   g.fillStyle=C.night; if(dayW>=20)
   for(let d=d0;d<=t1+DAY&&d<D.fut;d+=DAY){const s=D.sun[d];
     if(!s){continue}
-    const a=px(X(d)),r=px(X(onRd(s[0]))),st=px(X(onRd(s[1]))),b=px(X(d+DAY));
+    const a=px(XE(d)),r=px(XE(onRd(s[0]))),st=px(XE(onRd(s[1]))),b=px(XE(d+DAY,1));
     if(r>a)g.fillRect(a,36,r-a,bot-36); if(b>st)g.fillRect(st,36,b-st,bot-36);}
   // sun / moon marks in the middle of each day and night
   {const d=dayOf(D.now),s=D.sun[d],n=D.sun[d+DAY]; if(s){ // only for the current day and the night after it
@@ -830,7 +834,7 @@ function render(){
     const ne=n?n[0]:d+DAY+7*H; if(X(ne)-X(s[1])>=20) icons.push({f:moonIcon,x:X((s[1]+ne)/2),y:48});}}
   icons.forEach(i=>i.r={x:i.x-9,y:i.y-9,w:18,h:18});
   // future
-  const xn=X(nowAt), xf=X(D.fut); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
+  const xn=X(nowAt), xf=XE(D.fut,1); if(xn<W){g.fillStyle=C.future;g.fillRect(Math.max(0,xn),0,Math.min(W,xf)-Math.max(0,xn),Ht)}
   // horizontal grid
   gl.lineWidth=1;
   const stepY=M().step(yMax-yMin), yFirst=Math.ceil(yMin/stepY)*stepY;
@@ -868,7 +872,7 @@ function render(){
     g.font='600 11px '+MONO; g.textBaseline='alphabetic';
     while(cur<t1&&cur<D.fut){const dt=new Date(cur), nx=yr?Date.UTC(dt.getUTCFullYear()+1,0,1):Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,1);
       if(yr||dt.getUTCFullYear()!==curY){const txt=yr?String(dt.getUTCFullYear()):MONF[dt.getUTCMonth()]+' '+dt.getUTCFullYear(), w=g.measureText(txt).width;
-        const a=Math.max(X(cur),X(D.t[0]),0), b=Math.min(X(nx),X(D.fut));
+        const a=Math.max(X(cur),X(D.t[0]),0), b=Math.min(X(nx),XE(D.fut,1));
         if(b-a>w+10){g.fillStyle=C.fg;g.fillText(txt,Math.min(a+5,b-w-5),14)}}
       cur=nx}}
   // rain bars
@@ -1296,11 +1300,23 @@ window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.p
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
   const dx=e.clientX-drag.last, now=performance.now();
+  dragBy(dx); vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();
+  // the finger has reached the edge of the screen and can go no further: while it is held there, the chart runs on by itself
+  // the way the finger was going, quicker and quicker (EDGE_V px/s and up), until the finger leaves the edge or lets go
+  const ex=e.clientX, push=ex<EDGE?1-ex/EDGE:ex>innerWidth-EDGE?(ex-innerWidth+EDGE)/EDGE:0;
+  if(push>0&&(ex<EDGE?dx<=0:dx>=0)){ if(!drag.auto){drag.auto={dir:ex<EDGE?-1:1,t:now,last:now,v:0}; requestAnimationFrame(edgeRun)} drag.auto.push=push}
+  else if(drag.auto&&push===0) drag.auto=null;});
+const EDGE=36;
+function dragBy(dx){ // the finger (or the edge run) moved the chart by dx px
   const W=box.clientWidth, pph=W/spanV;
   drag.v-=dx/pph*H; center=drag.v; clamp();
   const rr=Math.max(0,(drag.v-maxC())/H*pph), rl=Math.max(0,(minC()-drag.v)/H*pph), rub=r=>W*0.3*(1-Math.exp(-r/(W*0.6))); // rubber band at both ends
-  pull=rr>0?rub(rr):-rub(rl);
-  vel=dx/Math.max(8,now-drag.t); drag.last=e.clientX; drag.t=now; draw();});
+  pull=rr>0?rub(rr):-rub(rl)}
+function edgeRun(now){const a=drag&&drag.auto; if(!a) return;
+  const dt=Math.min(50,now-a.last); a.last=now;
+  a.v=(260+640*Math.min(1,(now-a.t)/700))*(.6+.4*a.push); // px/s: it gathers speed over 0.7 s, more the deeper the finger is at the edge
+  if(pull===0||Math.sign(pull)!==-a.dir) dragBy(a.dir*a.v*dt/1000); // stops at the end of the data, where the rubber band takes over
+  vel=a.dir*a.v/1000; draw(); requestAnimationFrame(edgeRun)}
 const unptr=e=>{ptrs.delete(e.pointerId); if(pinch&&ptrs.size<2){pinch=null; draw()}};
 window.addEventListener('pointerup',e=>{unptr(e);if(!drag)return;const d=drag;drag=null;
   if(d.lock!=='x') return;
@@ -1314,12 +1330,12 @@ window.addEventListener('pointercancel',e=>{unptr(e);if(drag){drag=null;if(pull!
 function release(){ // reveal next week if pulled far enough; the pull eases back and the new week slides into place
   const W=box.clientWidth, end=D.t[D.t.length-1]+H, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(pull<0) extendBack();
-  if(pull>=W*0.15&&D.fut<end&&!D.partial){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0}}
+  if(pull>=W*0.15&&D.fut<end&&!D.partial){const from=D.fut; D.fut=Math.min(end,D.fut+7*DAY); if(!reduce) warp={from,e:0,g:0}}
   const p0=pull, t0=performance.now();
   const step=now=>{const ms=now-t0;
     const kp=reduce?1:Math.min(1,ms/240); pull=p0*Math.pow(1-kp,3);
     let done=kp>=1;
-    if(warp){const kw=Math.min(1,ms/520); warp.e=1-Math.pow(1-kw,4); if(kw>=1) warp=null; else done=false} // ease-out, no overshoot
+    if(warp){const kw=Math.min(1,ms/520); warp.e=1-Math.pow(1-kw,4); warp.g=1-Math.pow(1-Math.min(1,ms/140),3); if(kw>=1) warp=null; else done=false} // ease-out, no overshoot
     draw(); if(!done) raf=requestAnimationFrame(step)};
   raf=requestAnimationFrame(step);
 }
