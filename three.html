@@ -516,14 +516,16 @@ function render(){
   span=Math.exp(Math.log(spanU)+(Math.log(Math.min(spanU,fzSpan(W)))-Math.log(spanU))*fz);
   const ppd=W/span, C={}; ['grid','grid-strong','fg','muted','paper','future','ink','c-m','c-d','c-e','cmp'].forEach(k=>C[k]=css('--'+k));
   const mix=hourMix(ppd), Rd=mix>0?5:1, Rs=mix>=.5?5:1; stepR=Rs; edge=Rs>1?.4:0;
-  // The cursor stays in the middle and the charts step under it reading by reading: a day, or an hour once zoomed in to hours.
-  // Each step is a quick ease-out (60 ms for a short one, up to 150 ms), so the points click into place under the cursor like a
-  // magnet. Swiped fast, the charts run smoothly and the dots glide along the lines; let go, they settle on the nearest reading
+  // The cursor stays in the middle. At the daily scales the charts follow the finger smoothly, the dots gliding along the lines,
+  // and settle on the nearest day only once let go. Zoomed in to hours (the close look, or pinched in) the charts step under
+  // the cursor hour by hour: each step is a quick ease-out (60 ms for a short one, up to 150 ms), so the points click into
+  // place under the cursor like a magnet; swiped fast, they run smoothly there too.
   // A step's tween is started a frame early, so it never begins with a frame standing still
   const inst=lastC==null?0:Math.abs(center-lastC)*ppd; lastC=center; spd=spd*.7+inst*.3; fv=fv*.7+inst/Math.max(4,dtF)*1000*.3;
-  const wheeling=nowT-wheelT<180, want=pinch||spd>3?center:clampC(Math.round(center*Rs)/Rs), ppr=ppd/Rs;
+  const wheeling=nowT-wheelT<180, loose=pinch||spd>3||Rs===1&&(drag&&drag.lock==='x'||wheeling);
+  const want=loose?center:clampC(Math.round(center*Rs)/Rs), ppr=ppd/Rs;
   if(pinch||reduce()||Math.abs(want-vc)>span/4){vc=want;stepTw=null}
-  else if(ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={err:vc-want,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-want)*ppd*2.2))};
+  else if(!loose&&ppr>=5&&spd<=3){ if(!stepTw||stepTw.to!==want) stepTw={err:vc-want,to:want,t:nowT-dtF,ms:Math.min(150,Math.max(60,Math.abs(vc-want)*ppd*2.2))};
     const k=Math.min(1,(nowT-stepTw.t)/stepTw.ms); vc=want+stepTw.err*Math.pow(1-k,3)}
   else {stepTw=null; vc+=(want-vc)*(spd>3?.6:.35)}
   if(Math.abs(want-vc)>.002||spd>.05||wheeling) draw(); else {vc=want; stepTw=null; if(!drag) center=vc}
@@ -747,10 +749,23 @@ window.addEventListener('pointermove',e=>{if(ptrs.has(e.pointerId)) ptrs.set(e.p
   if(!drag)return;
   if(drag.lock===null){const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);if(dx<6&&dy<6)return;drag.lock=dx>dy?'x':'y';if(drag.lock==='x')box.setPointerCapture?.(e.pointerId)}
   if(drag.lock!=='x')return;
-  const dx=e.clientX-drag.last, now=performance.now(), ppd=box.clientWidth/span;
-  drag.v-=dx/ppd; center=clampC(drag.v);
-  const over=drag.v-(days.length-1+edge), under=-edge-drag.v; pull=over>0?rub(over*ppd):under>0?-rub(under*ppd):0; // rubber band at both ends
-  vel=dx/Math.max(8,now-drag.t)/ppd; drag.last=e.clientX; drag.t=now; draw()});
+  const dx=e.clientX-drag.last, now=performance.now();
+  dragBy(dx); vel=dx/Math.max(8,now-drag.t)/(box.clientWidth/span); drag.last=e.clientX; drag.t=now; draw();
+  // the finger has reached the edge of the screen and can go no further: while it is held there, the charts run on by themselves
+  // the way the finger was going, a little quicker as it goes (as on the main page: about 100 to 350 px/s in the close look,
+  // to 180 at the usual scale), until the finger leaves the edge or lets go
+  const ex=e.clientX, push=ex<EDGE?1-ex/EDGE:ex>innerWidth-EDGE?(ex-innerWidth+EDGE)/EDGE:0;
+  if(push>0&&(ex<EDGE?dx<=0:dx>=0)){ if(!drag.auto){drag.auto={dir:ex<EDGE?-1:1,t:now,last:now,v:0}; requestAnimationFrame(edgeRun)} drag.auto.push=push}
+  else if(drag.auto&&push===0) drag.auto=null});
+const EDGE=36;
+function dragBy(dx){ // the finger (or the edge run) moved the charts by dx px
+  const ppd=box.clientWidth/span; drag.v-=dx/ppd; center=clampC(drag.v);
+  const over=drag.v-(days.length-1+edge), under=-edge-drag.v; pull=over>0?rub(over*ppd):under>0?-rub(under*ppd):0} // rubber band at both ends
+function edgeRun(now){const a=drag&&drag.auto; if(!a) return;
+  const dt=Math.min(50,now-a.last); a.last=now;
+  a.v=(110+(fz>.5?240:70)*Math.min(1,(now-a.t)/900))*(.6+.4*a.push); // px/s: it gathers speed over 0.9 s, much less at the usual scale than in the close look
+  if(pull===0||Math.sign(pull)!==-a.dir) dragBy(a.dir*a.v*dt/1000); // stops at the end of the data, where the rubber band takes over
+  vel=a.dir*a.v/1000/(box.clientWidth/span); draw(); requestAnimationFrame(edgeRun)}
 function springBack(){const p0=pull,t0=performance.now();const st=now=>{const k=reduce()?1:Math.min(1,(now-t0)/260);pull=p0*Math.pow(1-k,3);draw();if(k<1)raf=requestAnimationFrame(st)};raf=requestAnimationFrame(st)}
 const unptr=e=>{ptrs.delete(e.pointerId); if(pinch&&ptrs.size<2){pinch=null; ys=null; draw()}};
 window.addEventListener('pointerup',e=>{unptr(e);if(!drag)return;const d=drag;drag=null;
