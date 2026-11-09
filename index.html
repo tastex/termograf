@@ -810,7 +810,9 @@ function render(){
   const t0=vc-spanV*H/2+pull/pph*H, t1=t0+spanV*H, top=60, bot=Ht-34, rainH=26;
   // a newly revealed week slides in from beyond the right edge: everything from warp.from on is shifted right,
   // and the shift only shrinks, so the new week never runs over the days before it
-  const Xb=ms=>(ms-t0)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
+  // counted from the cursor itself, so the cursor sits on exactly W/2-pull in every frame. Counted from t0, the rounding error
+  // changed with the scale while zooming in or out, and on a screen of odd width the cursor flicked between two pixels
+  const xc=W/2-pull, Xb=ms=>xc+(ms-vc)/H*pph, wShift=warp?(1-warp.e)*Math.max(0,W+24-Xb(warp.from)):0;
   const X=ms=>Xb(ms)+(warp&&ms>=warp.from?wShift:0), Y=v=>top+(yMax-v)/(yMax-yMin)*(bot-top);
   // the backing (night bands, the forecast shade) ends exactly where the line ends, on the last reading, not an hour past it.
   // When a new week is revealed, the last hour of the old end grows out of the backing at once (warp.g), the rest slides in
